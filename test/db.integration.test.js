@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initDb, query } from '../db.js';
+import { cleanupExpiredSessions } from '../auth.js';
 
 test('PostgreSQL schema initializes and preserves ownership/cascade integrity', async () => {
   assert.ok(process.env.DATABASE_URL, 'DATABASE_URL must be configured for the integration test');
@@ -32,6 +33,15 @@ test('PostgreSQL schema initializes and preserves ownership/cascade integrity', 
   );
   assert.equal(Number(counts.rows[0].conversations), 1);
   assert.equal(Number(counts.rows[0].messages), 1);
+
+  const expiredTokenHash = `expired-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  await query(
+    "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, NOW() - INTERVAL '1 minute')",
+    [expiredTokenHash, userId]
+  );
+  await cleanupExpiredSessions();
+  const expired = await query('SELECT COUNT(*) AS count FROM sessions WHERE token_hash = $1', [expiredTokenHash]);
+  assert.equal(Number(expired.rows[0].count), 0);
 
   await query('DELETE FROM users WHERE id = $1', [userId]);
 
