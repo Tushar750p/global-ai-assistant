@@ -1,8 +1,10 @@
 import 'dotenv/config';
 import express from 'express';
+import multer from 'multer';
 import OpenAI from 'openai';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,9 +15,23 @@ const client = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPE
 const MAX_MESSAGE_LENGTH = 8000;
 const MAX_HISTORY_ITEMS = 12;
 const MAX_HISTORY_ITEM_LENGTH = 8000;
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_FILE_TYPES = new Set([
+  'application/pdf',
+  'text/plain',
+  'text/csv',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+]);
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 30;
 const requests = new Map();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE, files: 1 },
+  fileFilter: (_req, file, cb) => cb(null, ALLOWED_FILE_TYPES.has(file.mimetype))
+});
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
@@ -35,57 +51,61 @@ function rateLimit(req, res, next) {
   const now = Date.now();
   const key = clientKey(req);
   const entry = requests.get(key);
-
   if (!entry || now - entry.start >= RATE_WINDOW_MS) {
     requests.set(key, { start: now, count: 1 });
     return next();
   }
-
   entry.count += 1;
-  if (entry.count > RATE_LIMIT) {
-    return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
-  }
+  if (entry.count > RATE_LIMIT) return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
   next();
 }
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, aiConfigured: Boolean(client) });
+app.get('/api/health', (_req, res) => res.json({ ok: true, aiConfigured: Boolean(client) }));
+
+app.post('/api/files', rateLimit, upload.single('file'), async (req, res) => {
+  if (!client) return res.status(503).json({ error: 'AI is not configured yet.' });
+  if (!req.file) return res.status(400).json({ error: 'Please upload a supported file: PDF, TXT, CSV, DOCX, or XLSX.' });
+
+  try {
+    const file = await client.files.create({
+      file: new File([req.file.buffer], req.file.originalname, { type: req.file.mimetype }),
+      purpose: 'user_data'
+    });
+    res.json({ fileId: file.id, name: req.file.originalname, size: req.file.size, type: req.file.mimetype });
+  } catch (error) {
+    console.error('File upload failed:', error?.message || error);
+    res.status(502).json({ error: 'The AI service could not process this file.' });
+  }
 });
 
 app.post('/api/chat', rateLimit, async (req, res) => {
-  const { message, history = [] } = req.body ?? {};
+  const { message, history = [], fileId = null } = req.body ?? {};
 
-  if (typeof message !== 'string' || !message.trim()) {
-    return res.status(400).json({ error: 'Please provide a message.' });
-  }
-
+  if (typeof message !== 'string' || !message.trim()) return res.status(400).json({ error: 'Please provide a message.' });
   const cleanMessage = message.trim();
-  if (cleanMessage.length > MAX_MESSAGE_LENGTH) {
-    return res.status(413).json({ error: `Message is too long. Maximum is ${MAX_MESSAGE_LENGTH} characters.` });
-  }
-
-  if (!client) {
-    return res.status(503).json({ error: 'AI is not configured yet.' });
-  }
+  if (cleanMessage.length > MAX_MESSAGE_LENGTH) return res.status(413).json({ error: `Message is too long. Maximum is ${MAX_MESSAGE_LENGTH} characters.` });
+  if (fileId !== null && (typeof fileId !== 'string' || !/^file-[A-Za-z0-9_-]+$/.test(fileId))) return res.status(400).json({ error: 'Invalid file reference.' });
+  if (!client) return res.status(503).json({ error: 'AI is not configured yet.' });
 
   const safeHistory = Array.isArray(history)
-    ? history
-        .slice(-MAX_HISTORY_ITEMS)
-        .filter(item =>
-          item &&
-          ['user', 'assistant'].includes(item.role) &&
-          typeof item.content === 'string' &&
-          item.content.trim() &&
-          item.content.length <= MAX_HISTORY_ITEM_LENGTH
-        )
-        .map(item => ({ role: item.role, content: item.content.trim() }))
+    ? history.slice(-MAX_HISTORY_ITEMS)
+      .filter(item => item && ['user', 'assistant'].includes(item.role) && typeof item.content === 'string' && item.content.trim() && item.content.length <= MAX_HISTORY_ITEM_LENGTH)
+      .map(item => ({ role: item.role, content: item.content.trim() }))
     : [];
 
   try {
+    const input = [...safeHistory, {
+      role: 'user',
+      content: [
+        ...(fileId ? [{ type: 'input_file', file_id: fileId }] : []),
+        { type: 'input_text', text: cleanMessage }
+      ]
+    }];
+
     const response = await client.responses.create({
       model: process.env.OPENAI_MODEL || 'gpt-5.6-luna',
-      instructions: 'You are Global AI Assistant, a helpful multilingual AI assistant. Reply in the language the user uses unless they ask for another language. Be clear, practical, and honest about uncertainty.',
-      input: [...safeHistory, { role: 'user', content: cleanMessage }]
+      instructions: 'You are Global AI Assistant, a helpful multilingual AI assistant. Reply in the language the user uses unless they ask for another language. If a document is attached, answer from it when relevant and clearly say when the document does not contain enough information. Be clear, practical, and honest about uncertainty.',
+      input
     });
 
     res.json({ reply: response.output_text || 'I could not generate a response.' });
