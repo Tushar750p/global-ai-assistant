@@ -16,7 +16,7 @@ export function normalizeEmail(email) {
 
 export function validateCredentials(email, password) {
   const normalized = normalizeEmail(email);
-  if (normalized.length > EMAIL_MAX || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return 'Please provide a valid email address.';
+  if (normalized.length > EMAIL_MAX || !/^\S+@[^\s@]+\.[^\s@]+$/.test(normalized)) return 'Please provide a valid email address.';
   if (typeof password !== 'string' || password.length < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters.`;
   if (password.length > PASSWORD_MAX) return `Password must be ${PASSWORD_MAX} characters or fewer.`;
   return null;
@@ -87,7 +87,7 @@ export async function createSession(userId) {
 export async function getSessionUser(req) {
   const token = readSessionToken(req);
   if (!token) return null;
-  const { rows } = await query('SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > NOW()', [hashSessionToken(token)]);
+  const { rows } = await query('SELECT u.id, u.email, u.plan FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > NOW()', [hashSessionToken(token)]);
   return rows[0] || null;
 }
 
