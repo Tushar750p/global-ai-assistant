@@ -1,8 +1,8 @@
 {
   "name": "global-ai-assistant",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "A global, multilingual AI assistant MVP.",
+  "description": "A global, multilingual AI assistant.",
   "type": "module",
   "scripts": {
     "start": "node server.js",
@@ -13,6 +13,7 @@
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "multer": "^2.0.2",
-    "openai": "^5.12.0"
+    "openai": "^5.12.0",
+    "pg": "^8.16.3"
   }
 }
