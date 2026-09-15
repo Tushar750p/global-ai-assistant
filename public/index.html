@@ -13,52 +13,33 @@
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">G</span><span>Global AI</span></div>
       <button id="new-chat" class="new-chat" type="button">＋ New chat</button>
-      <div class="sidebar-section">
-        <span class="section-label">Current session</span>
-        <div class="history-item active">💬 <span>AI Assistant</span></div>
-      </div>
+      <div class="sidebar-section"><span class="section-label">Current session</span><div class="history-item active">💬 <span>AI Assistant</span></div></div>
       <div class="sidebar-footer"><span class="mini-dot"></span><span id="sidebar-status">Connecting…</span></div>
     </aside>
-
     <main class="app">
       <header class="header">
-        <div>
-          <div class="eyebrow">GLOBAL AI ASSISTANT</div>
-          <h1>What can I help you with?</h1>
-          <p>Ask questions, analyze documents and images, search the web, write, or learn — in your language.</p>
-        </div>
-        <div class="header-actions">
-          <label class="language-wrap" for="language"><span>Language</span><select id="language" aria-label="Response language"><option value="auto">Auto detect</option><option value="en">English</option><option value="hi">हिन्दी</option><option value="mr">मराठी</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt">Português</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="ar">العربية</option></select></label>
-          <span id="status" class="status">Checking…</span>
-        </div>
+        <div><div class="eyebrow">GLOBAL AI ASSISTANT</div><h1>What can I help you with?</h1><p>Ask questions, analyze documents and images, search the web, or speak naturally — in your language.</p></div>
+        <div class="header-actions"><label class="language-wrap" for="language"><span>Language</span><select id="language" aria-label="Response language"><option value="auto">Auto detect</option><option value="en">English</option><option value="hi">हिन्दी</option><option value="mr">मराठी</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt">Português</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="ar">العربية</option></select></label><span id="status" class="status">Checking…</span></div>
       </header>
-
       <section id="chat" class="chat" aria-live="polite"></section>
-
-      <div id="file-chip" class="file-chip" hidden>
-        <span>📎 <b id="file-name"></b></span>
-        <button id="remove-file" type="button" aria-label="Remove attached file">×</button>
-      </div>
-      <div id="image-chip" class="image-chip" hidden>
-        <img id="image-preview" alt="Selected image preview" />
-        <span><b id="image-name"></b><small>Image ready</small></span>
-        <button id="remove-image" type="button" aria-label="Remove image">×</button>
-      </div>
-
+      <div id="file-chip" class="file-chip" hidden><span>📎 <b id="file-name"></b></span><button id="remove-file" type="button" aria-label="Remove attached file">×</button></div>
+      <div id="image-chip" class="image-chip" hidden><img id="image-preview" alt="Selected image preview" /><span><b id="image-name"></b><small>Image ready</small></span><button id="remove-image" type="button" aria-label="Remove image">×</button></div>
       <form id="chat-form" class="composer">
         <textarea id="message" rows="2" maxlength="8000" placeholder="Message Global AI…" autocomplete="off" required></textarea>
         <div class="composer-bottom">
           <div class="composer-tools">
-            <label class="attach" title="Upload PDF, TXT, CSV, DOCX or XLSX">📎<input id="file-input" type="file" accept=".pdf,.txt,.csv,.docx,.xlsx" hidden /></label>
+            <label class="attach" title="Upload document">📎<input id="file-input" type="file" accept=".pdf,.txt,.csv,.docx,.xlsx" hidden /></label>
             <label class="attach" title="Analyze an image">🖼️<input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden /></label>
-            <label class="web-toggle" title="Allow Global AI to search the live web"><input id="web-search" type="checkbox" /> <span>🌐 Web</span></label>
+            <button id="voice-button" class="voice-button" type="button" title="Record voice">🎙️</button>
+            <label class="web-toggle" title="Allow live web search"><input id="web-search" type="checkbox" /> <span>🌐 Web</span></label>
+            <label class="web-toggle" title="Read the answer aloud"><input id="speak-answer" type="checkbox" /> <span>🔊 Voice</span></label>
             <span id="upload-status">Files up to 10 MB</span>
           </div>
-          <span>Shift + Enter for a new line</span>
+          <span id="voice-status">Shift + Enter for a new line</span>
           <button id="send" type="submit"><span>Send</span><b>↑</b></button>
         </div>
       </form>
-      <p class="note">Global AI can analyze supported documents and images. Verify important information before making decisions.</p>
+      <p class="note">Voice uses speech recognition and speech generation. Verify important information before making decisions.</p>
     </main>
   </div>
   <script src="/app.js"></script>
