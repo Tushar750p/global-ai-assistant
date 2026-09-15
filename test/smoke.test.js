@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { hashPassword, verifyPassword, validateCredentials } from '../auth.js';
 
 let nextPort = 4317;
 function startServer() {
   const port = nextPort++;
-  const child = spawn(process.execPath, ['server.js'], { env: { ...process.env, PORT: String(port), OPENAI_API_KEY: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, ['server.js'], { env: { ...process.env, PORT: String(port), OPENAI_API_KEY: '', DATABASE_URL: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
   const ready = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Server did not start in time.')), 10000);
     child.stdout.on('data', data => { if (data.toString().includes('Global AI Assistant running')) { clearTimeout(timer); resolve(); } });
@@ -20,10 +21,14 @@ for (const [name, request] of [
 ]) {
   test(name, async t => {
     const server = startServer(); t.after(() => server.child.kill()); await server.ready;
-    const response = await request(server.port); assert.equal(response.status, 200); assert.deepEqual(await response.json(), { ok: true, aiConfigured: false });
+    const response = await request(server.port); assert.equal(response.status, 200); assert.deepEqual(await response.json(), { ok: true, aiConfigured: false, databaseConfigured: false });
   });
 }
 
+test('password hashing verifies the original password only', async () => { const hash = await hashPassword('CorrectHorseBatteryStaple!'); assert.notEqual(hash, 'CorrectHorseBatteryStaple!'); assert.equal(await verifyPassword('CorrectHorseBatteryStaple!', hash), true); assert.equal(await verifyPassword('WrongPassword!', hash), false); });
+test('credential validation rejects weak or malformed credentials', () => { assert.match(validateCredentials('bad-email', 'long-enough'), /valid email/); assert.match(validateCredentials('user@example.com', 'short'), /at least 8/); assert.equal(validateCredentials('user@example.com', 'long-enough-password'), null); });
+test('auth session endpoint is anonymous without a database', async t => { const s=startServer(); t.after(()=>s.child.kill()); await s.ready; const r=await fetch(`http://127.0.0.1:${s.port}/api/auth/me`); assert.equal(r.status,200); assert.deepEqual(await r.json(),{authenticated:false,databaseConfigured:false}); });
+test('history endpoint requires database configuration', async t => { const s=startServer(); t.after(()=>s.child.kill()); await s.ready; const r=await fetch(`http://127.0.0.1:${s.port}/api/history`); assert.equal(r.status,503); assert.match((await r.json()).error,/DATABASE_URL/); });
 test('chat rejects an empty message', async t => { const s=startServer(); t.after(()=>s.child.kill()); await s.ready; const r=await fetch(`http://127.0.0.1:${s.port}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'   '})}); assert.equal(r.status,400); assert.deepEqual(await r.json(),{error:'Please provide a message.'}); });
 test('chat rejects messages over the size limit', async t => { const s=startServer(); t.after(()=>s.child.kill()); await s.ready; const r=await fetch(`http://127.0.0.1:${s.port}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'x'.repeat(8001)})}); assert.equal(r.status,413); assert.match((await r.json()).error,/Maximum is 8000 characters/); });
 test('chat rejects invalid file reference', async t => { const s=startServer(); t.after(()=>s.child.kill()); await s.ready; const r=await fetch(`http://127.0.0.1:${s.port}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Summarize',fileId:'../secret'})}); assert.equal(r.status,400); assert.deepEqual(await r.json(),{error:'Invalid file reference.'}); });
