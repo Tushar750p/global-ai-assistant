@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Global AI Assistant</title>
+  <meta name="description" content="A simple multilingual AI assistant MVP." />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="header">
+      <div>
+        <div class="badge">GLOBAL AI</div>
+        <h1>Global AI Assistant</h1>
+        <p>Ask anything. Write in your language.</p>
+      </div>
+      <span id="status" class="status">Checking AI…</span>
+    </header>
+
+    <section id="chat" class="chat" aria-live="polite">
+      <div class="message assistant">
+        <div class="avatar">AI</div>
+        <div class="bubble">Hi! I’m your Global AI Assistant. Ask me something in English, Hindi, Marathi, or another language.</div>
+      </div>
+    </section>
+
+    <form id="chat-form" class="composer">
+      <textarea id="message" rows="2" placeholder="Type your message…" autocomplete="off" required></textarea>
+      <button id="send" type="submit">Send</button>
+    </form>
+    <p class="note">MVP v0.1 • Never put your API key in the browser or GitHub.</p>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
