@@ -25,6 +25,13 @@ export async function query(text, params) {
   return db.query(text, params);
 }
 
+export async function closeDb() {
+  if (!pool) return;
+  const currentPool = pool;
+  pool = undefined;
+  await currentPool.end();
+}
+
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function initializeSchema(db) {
