@@ -28,8 +28,10 @@ export async function verifyPassword(password, encoded) {
   try {
     const [scheme, n, r, p, saltText, hashText] = String(encoded).split('$');
     if (scheme !== 'scrypt') return false;
+    const N = Number(n), R = Number(r), P = Number(p);
+    if (N !== 16384 || R !== 8 || P !== 1 || !saltText || !hashText) return false;
     const expected = Buffer.from(hashText, 'base64url');
-    const actual = await scrypt(password, Buffer.from(saltText, 'base64url'), expected.length, { N: Number(n), r: Number(r), p: Number(p) });
+    const actual = await scrypt(password, Buffer.from(saltText, 'base64url'), expected.length, { N, r: R, p: P });
     return crypto.timingSafeEqual(Buffer.from(actual), expected);
   } catch { return false; }
 }
@@ -48,7 +50,8 @@ export function sessionCookie(token) {
 }
 
 export function clearSessionCookie() {
-  return 'session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  return `session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
 }
 
 export function readSessionToken(req) {
