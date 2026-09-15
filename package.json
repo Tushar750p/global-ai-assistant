@@ -5,8 +5,8 @@
   "description": "A global, multilingual AI assistant.",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
+    "start": "node --import ./runtime-hardening.js server.js",
+    "dev": "node --import ./runtime-hardening.js --watch server.js",
     "test": "node --test test/smoke.test.js"
   },
   "dependencies": {
