@@ -85,7 +85,7 @@ Other optional variables:
 
 ## Stripe billing setup
 
-The application uses Stripe Checkout in subscription mode. Stripe sends subscription lifecycle events to `/api/billing/webhook`; the server verifies the webhook signature and updates the user's Pro/Free plan in PostgreSQL. Stripe requires the webhook request's raw body for signature verification, so webhook middleware is registered before the global JSON parser. citeturn1view0turn2view0
+The application uses Stripe Checkout in subscription mode. Stripe sends subscription lifecycle events to `/api/billing/webhook`; the server verifies the webhook signature and updates the user's Pro/Free plan in PostgreSQL. The webhook middleware is registered before the global JSON parser so Stripe's raw request body remains available for signature verification.
 
 Configure billing in Stripe test mode first:
 
@@ -93,12 +93,12 @@ Configure billing in Stripe test mode first:
 2. Copy the Price ID into `STRIPE_PRO_PRICE_ID`.
 3. Copy the Stripe secret key into `STRIPE_SECRET_KEY`.
 4. Create a webhook endpoint at `https://YOUR-DOMAIN/api/billing/webhook`.
-5. Subscribe the endpoint to the subscription lifecycle events used by the app: `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.paused`, and `customer.subscription.resumed`.
+5. Subscribe the endpoint to: `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.paused`, and `customer.subscription.resumed`.
 6. Copy the endpoint signing secret (`whsec_...`) into `STRIPE_WEBHOOK_SECRET`.
 7. Set `STRIPE_SUCCESS_URL` and `STRIPE_CANCEL_URL` if you want custom post-Checkout redirects.
 8. Run a test subscription and confirm that the account changes to Pro only after the signed Stripe subscription event is processed.
 
-Stripe recommends testing webhook handlers with the Stripe CLI before going live. citeturn0view1turn2view0
+Stripe recommends testing webhook handlers with the Stripe CLI before going live.
 
 Do not put Stripe secret keys or webhook signing secrets in GitHub source, frontend JavaScript, or committed `.env` files.
 
@@ -120,10 +120,7 @@ CI validates the application and its regression suite, but a successful CI run d
 ## Roadmap
 
 1. Production security hardening
-2. Database integration tests
-3. Usage metering and quotas
-4. Payments/subscriptions
-5. Observability and error tracking
-6. Tool/agent system
-7. Team/workspace features
-8. Scalable production architecture
+2. Observability and error tracking
+3. Tool/agent system
+4. Team/workspace features
+5. Scalable production architecture
