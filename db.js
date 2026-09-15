@@ -51,6 +51,8 @@ async function initializeSchema(db) {
         ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS conversation_id BIGINT REFERENCES conversations(id) ON DELETE CASCADE;
         CREATE INDEX IF NOT EXISTS chat_messages_conversation_created_idx ON chat_messages(conversation_id, created_at ASC);
         CREATE INDEX IF NOT EXISTS chat_messages_user_created_idx ON chat_messages(user_id, created_at DESC);
+        CREATE TABLE IF NOT EXISTS usage_monthly (user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, period_start DATE NOT NULL, chats INTEGER NOT NULL DEFAULT 0 CHECK (chats >= 0), input_chars BIGINT NOT NULL DEFAULT 0 CHECK (input_chars >= 0), output_chars BIGINT NOT NULL DEFAULT 0 CHECK (output_chars >= 0), PRIMARY KEY (user_id, period_start));
+        CREATE INDEX IF NOT EXISTS usage_monthly_period_idx ON usage_monthly(period_start);
       `);
       return;
     } catch (error) {
