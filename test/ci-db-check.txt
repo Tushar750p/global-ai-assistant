@@ -1,0 +1,1 @@
+PostgreSQL CI integration is configured through the workflow service container.
