@@ -17,10 +17,7 @@
         <span class="section-label">Current session</span>
         <div class="history-item active">💬 <span>AI Assistant</span></div>
       </div>
-      <div class="sidebar-footer">
-        <span class="mini-dot"></span>
-        <span id="sidebar-status">Connecting…</span>
-      </div>
+      <div class="sidebar-footer"><span class="mini-dot"></span><span id="sidebar-status">Connecting…</span></div>
     </aside>
 
     <main class="app">
@@ -28,45 +25,28 @@
         <div>
           <div class="eyebrow">GLOBAL AI ASSISTANT</div>
           <h1>What can I help you with?</h1>
-          <p>Ask questions, solve problems, write, learn, or build — in your language.</p>
+          <p>Ask questions, solve problems, write, learn, or analyze your files — in your language.</p>
         </div>
         <div class="header-actions">
-          <label class="language-wrap" for="language">
-            <span>Language</span>
-            <select id="language" aria-label="Response language">
-              <option value="auto">Auto detect</option>
-              <option value="en">English</option>
-              <option value="hi">हिन्दी</option>
-              <option value="mr">मराठी</option>
-              <option value="es">Español</option>
-              <option value="fr">Français</option>
-              <option value="de">Deutsch</option>
-              <option value="pt">Português</option>
-              <option value="ja">日本語</option>
-              <option value="ko">한국어</option>
-              <option value="ar">العربية</option>
-            </select>
-          </label>
+          <label class="language-wrap" for="language"><span>Language</span><select id="language" aria-label="Response language"><option value="auto">Auto detect</option><option value="en">English</option><option value="hi">हिन्दी</option><option value="mr">मराठी</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt">Português</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="ar">العربية</option></select></label>
           <span id="status" class="status">Checking…</span>
         </div>
       </header>
 
-      <section id="chat" class="chat" aria-live="polite">
-        <div class="welcome-card">
-          <div class="welcome-icon">✦</div>
-          <h2>Welcome to Global AI</h2>
-          <p>Your multilingual AI workspace. Start a conversation below.</p>
-          <div class="suggestions">
-            <button class="suggestion" type="button" data-prompt="Explain cloud computing in simple words.">☁️ Explain cloud computing</button>
-            <button class="suggestion" type="button" data-prompt="Help me write a professional email.">✍️ Write an email</button>
-            <button class="suggestion" type="button" data-prompt="Teach me Linux system administration step by step.">🛠️ Learn a skill</button>
-          </div>
-        </div>
-      </section>
+      <section id="chat" class="chat" aria-live="polite"></section>
+
+      <div id="file-chip" class="file-chip" hidden>
+        <span>📎 <b id="file-name"></b></span>
+        <button id="remove-file" type="button" aria-label="Remove attached file">×</button>
+      </div>
 
       <form id="chat-form" class="composer">
         <textarea id="message" rows="2" maxlength="8000" placeholder="Message Global AI…" autocomplete="off" required></textarea>
         <div class="composer-bottom">
+          <div class="composer-tools">
+            <label class="attach" title="Upload PDF, TXT, CSV, DOCX or XLSX">📎<input id="file-input" type="file" accept=".pdf,.txt,.csv,.docx,.xlsx" hidden /></label>
+            <span id="upload-status">Files up to 10 MB</span>
+          </div>
           <span>Shift + Enter for a new line</span>
           <button id="send" type="submit"><span>Send</span><b>↑</b></button>
         </div>
