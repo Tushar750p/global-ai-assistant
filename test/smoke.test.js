@@ -21,10 +21,14 @@ for (const [name, request] of [
 ]) {
   test(name, async t => {
     const server = startServer(); t.after(() => server.child.kill()); await server.ready;
-    const response = await request(server.port); assert.equal(response.status, 200); assert.deepEqual(await response.json(), { ok: true, aiConfigured: false, databaseConfigured: false });
+    const response = await request(server.port); assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual({ ok: body.ok, aiConfigured: body.aiConfigured, databaseConfigured: body.databaseConfigured }, { ok: true, aiConfigured: false, databaseConfigured: false });
+    assert.equal(Number.isInteger(body.uptimeSeconds), true);
   });
 }
 
+test('API responses include a unique request ID', async t => { const a=startServer(); const b=startServer(); t.after(()=>{a.child.kill();b.child.kill();}); await Promise.all([a.ready,b.ready]); const [ra,rb]=await Promise.all([fetch(`http://127.0.0.1:${a.port}/api/health`),fetch(`http://127.0.0.1:${b.port}/api/health`)]); const ida=ra.headers.get('x-request-id'),idb=rb.headers.get('x-request-id'); assert.match(ida,/^[0-9a-f-]{36}$/); assert.match(idb,/^[0-9a-f-]{36}$/); assert.notEqual(ida,idb); });
 test('password hashing verifies the original password only', async () => { const hash = await hashPassword('CorrectHorseBatteryStaple!'); assert.notEqual(hash, 'CorrectHorseBatteryStaple!'); assert.equal(await verifyPassword('CorrectHorseBatteryStaple!', hash), true); assert.equal(await verifyPassword('WrongPassword!', hash), false); });
 test('password verification rejects unsupported scrypt parameters', async () => { const hash = await hashPassword('CorrectHorseBatteryStaple!'); const parts = hash.split('$'); parts[1] = '32768'; assert.equal(await verifyPassword('CorrectHorseBatteryStaple!', parts.join('$')), false); });
 test('credential validation rejects weak or malformed credentials', () => { assert.match(validateCredentials('bad-email', 'long-enough'), /valid email/); assert.match(validateCredentials('user@example.com', 'short'), /at least 8/); assert.equal(validateCredentials('user@example.com', 'long-enough-password'), null); });
