@@ -62,7 +62,12 @@ export function readSessionToken(req) {
   try { return decodeURIComponent(match.slice(8)); } catch { return null; }
 }
 
+export async function cleanupExpiredSessions() {
+  await query('DELETE FROM sessions WHERE expires_at <= NOW()');
+}
+
 export async function createSession(userId) {
+  await cleanupExpiredSessions();
   const token = createSessionToken();
   const tokenHash = hashSessionToken(token);
   await query(`INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '${SESSION_DAYS} days')`, [tokenHash, userId]);
