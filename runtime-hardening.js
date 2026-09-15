@@ -1,0 +1,45 @@
+import { closeDb } from './db.js';
+
+let shuttingDown = false;
+
+function findHttpServers() {
+  return process._getActiveHandles().filter(handle =>
+    handle && handle.constructor?.name === 'Server' && typeof handle.close === 'function'
+  );
+}
+
+function closeServer(server) {
+  return new Promise(resolve => {
+    if (server.listening) {
+      server.close(() => resolve());
+    } else {
+      resolve();
+    }
+  });
+}
+
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Received ${signal}; shutting down gracefully.`);
+
+  const forceExit = setTimeout(() => {
+    console.error('Graceful shutdown timed out; forcing process exit.');
+    process.exit(1);
+  }, 10000);
+  forceExit.unref();
+
+  try {
+    await Promise.all(findHttpServers().map(closeServer));
+    await closeDb();
+    clearTimeout(forceExit);
+    process.exit(0);
+  } catch (error) {
+    clearTimeout(forceExit);
+    console.error('Graceful shutdown failed:', error?.message || error);
+    process.exit(1);
+  }
+}
+
+process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+process.once('SIGINT', () => { void shutdown('SIGINT'); });
