@@ -1,4 +1,5 @@
 import { query } from './db.js';
+import { getPlan } from './plans.js';
 
 const DEFAULT_CHAT_LIMIT = 100;
 const DEFAULT_INPUT_CHAR_LIMIT = 800000;
@@ -9,11 +10,12 @@ function positiveLimit(value, fallback) {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-export function usageLimits() {
+export function usageLimits(planId = 'free') {
+  const plan = getPlan(planId);
   return {
-    chats: positiveLimit(process.env.MONTHLY_CHAT_LIMIT, DEFAULT_CHAT_LIMIT),
-    inputChars: positiveLimit(process.env.MONTHLY_INPUT_CHAR_LIMIT, DEFAULT_INPUT_CHAR_LIMIT),
-    outputChars: positiveLimit(process.env.MONTHLY_OUTPUT_CHAR_LIMIT, DEFAULT_OUTPUT_CHAR_LIMIT)
+    chats: positiveLimit(process.env.MONTHLY_CHAT_LIMIT, plan?.chats ?? DEFAULT_CHAT_LIMIT),
+    inputChars: positiveLimit(process.env.MONTHLY_INPUT_CHAR_LIMIT, plan?.inputChars ?? DEFAULT_INPUT_CHAR_LIMIT),
+    outputChars: positiveLimit(process.env.MONTHLY_OUTPUT_CHAR_LIMIT, plan?.outputChars ?? DEFAULT_OUTPUT_CHAR_LIMIT)
   };
 }
 
@@ -22,7 +24,10 @@ export function usagePeriodStart(date = new Date()) {
 }
 
 export async function getUsage(userId) {
-  const limits = usageLimits();
+  const account = await query('SELECT plan FROM users WHERE id = $1', [userId]);
+  const planId = account.rows[0]?.plan || 'free';
+  const plan = getPlan(planId);
+  const limits = usageLimits(planId);
   const period = usagePeriodStart();
   const result = await query(
     `SELECT chats, input_chars, output_chars, period_start
@@ -32,6 +37,7 @@ export async function getUsage(userId) {
   const row = result.rows[0] || { chats: 0, input_chars: 0, output_chars: 0, period_start: period };
   const used = { chats: Number(row.chats), inputChars: Number(row.input_chars), outputChars: Number(row.output_chars) };
   return {
+    plan: { id: plan.id, name: plan.name, description: plan.description },
     periodStart: new Date(row.period_start).toISOString().slice(0, 10),
     used,
     limits,
