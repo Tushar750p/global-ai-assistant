@@ -55,6 +55,29 @@ async function initializeSchema(db) {
         CREATE INDEX IF NOT EXISTS chat_messages_user_created_idx ON chat_messages(user_id, created_at DESC);
         CREATE TABLE IF NOT EXISTS usage_monthly (user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, period_start DATE NOT NULL, chats INTEGER NOT NULL DEFAULT 0 CHECK (chats >= 0), input_chars BIGINT NOT NULL DEFAULT 0 CHECK (input_chars >= 0), output_chars BIGINT NOT NULL DEFAULT 0 CHECK (output_chars >= 0), PRIMARY KEY (user_id, period_start));
         CREATE INDEX IF NOT EXISTS usage_monthly_period_idx ON usage_monthly(period_start);
+        CREATE TABLE IF NOT EXISTS billing_subscriptions (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          provider TEXT NOT NULL,
+          customer_id TEXT,
+          subscription_id TEXT NOT NULL,
+          product_id TEXT,
+          price_id TEXT,
+          status TEXT NOT NULL,
+          current_period_start TIMESTAMPTZ,
+          current_period_end TIMESTAMPTZ,
+          cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE(provider, subscription_id)
+        );
+        CREATE INDEX IF NOT EXISTS billing_subscriptions_user_idx ON billing_subscriptions(user_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS billing_subscriptions_customer_idx ON billing_subscriptions(provider, customer_id);
+        CREATE TABLE IF NOT EXISTS billing_events (
+          event_id TEXT PRIMARY KEY,
+          event_type TEXT NOT NULL,
+          received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
       `);
       return;
     } catch (error) {
