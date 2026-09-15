@@ -34,13 +34,6 @@ function startServer() {
   return { child, port, ready };
 }
 
-async function startAndFetch(path, options = {}) {
-  const server = startServer();
-  await server.ready;
-  const response = await fetch(`http://127.0.0.1:${server.port}${path}`, options);
-  return { ...server, response };
-}
-
 test('health endpoint responds correctly', async t => {
   const server = startServer();
   t.after(() => server.child.kill());
@@ -79,6 +72,52 @@ test('chat rejects messages over the size limit', async t => {
 
   assert.equal(response.status, 413);
   assert.match((await response.json()).error, /Maximum is 8000 characters/);
+});
+
+test('chat rejects an invalid file reference', async t => {
+  const server = startServer();
+  t.after(() => server.child.kill());
+  await server.ready;
+
+  const response = await fetch(`http://127.0.0.1:${server.port}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'Summarize this', fileId: '../secret' })
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'Invalid file reference.' });
+});
+
+test('chat rejects an invalid web search setting', async t => {
+  const server = startServer();
+  t.after(() => server.child.kill());
+  await server.ready;
+
+  const response = await fetch(`http://127.0.0.1:${server.port}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'Hello', webSearch: 'true' })
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'Invalid web search setting.' });
+});
+
+test('file upload returns a safe response when AI is not configured', async t => {
+  const server = startServer();
+  t.after(() => server.child.kill());
+  await server.ready;
+
+  const formData = new FormData();
+  formData.append('file', new Blob(['hello'], { type: 'text/plain' }), 'notes.txt');
+  const response = await fetch(`http://127.0.0.1:${server.port}/api/files`, {
+    method: 'POST',
+    body: formData
+  });
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: 'AI is not configured yet.' });
 });
 
 test('chat returns a safe response when AI is not configured', async t => {
