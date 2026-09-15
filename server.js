@@ -10,6 +10,7 @@ import { requestLogger } from './observability.js';
 const __filename=fileURLToPath(import.meta.url),__dirname=path.dirname(__filename),app=express(),port=Number(process.env.PORT)||3000;
 const client=process.env.OPENAI_API_KEY?new OpenAI({apiKey:process.env.OPENAI_API_KEY}):null;
 const MAX_MESSAGE_LENGTH=8000,MAX_HISTORY_ITEMS=12,MAX_HISTORY_ITEM_LENGTH=8000,MAX_FILE_SIZE=10*1024*1024,MAX_AUDIO_SIZE=15*1024*1024,RATE_WINDOW_MS=60000,RATE_LIMIT=30,requests=new Map(),AUTH_RATE_WINDOW_MS=10*60*1000,AUTH_RATE_LIMIT=10,authRequests=new Map();
+const RATE_LIMIT_CLEANUP_INTERVAL_MS=5*60*1000;
 const ALLOWED_FILE_TYPES=new Set(['application/pdf','text/plain','text/csv','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
 const ALLOWED_IMAGE_TYPES=new Set(['image/png','image/jpeg','image/webp','image/gif']),ALLOWED_AUDIO_TYPES=new Set(['audio/webm','audio/ogg','audio/wav','audio/mpeg','audio/mp4']);
 const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:MAX_FILE_SIZE,files:1},fileFilter:(_r,f,cb)=>cb(null,ALLOWED_FILE_TYPES.has(f.mimetype))});
@@ -19,6 +20,8 @@ app.disable('x-powered-by');app.set('trust proxy',process.env.NODE_ENV==='produc
 const clientKey=req=>req.ip||req.socket.remoteAddress||'unknown';
 function rateLimit(req,res,next){const now=Date.now(),key=clientKey(req),e=requests.get(key);if(!e||now-e.start>=RATE_WINDOW_MS){requests.set(key,{start:now,count:1});return next();}if(++e.count>RATE_LIMIT)return res.status(429).json({error:'Too many requests. Please wait a minute and try again.'});next();}
 function authRateLimit(req,res,next){const now=Date.now(),key=clientKey(req),e=authRequests.get(key);if(!e||now-e.start>=AUTH_RATE_WINDOW_MS){authRequests.set(key,{start:now,count:1});return next();}if(++e.count>AUTH_RATE_LIMIT)return res.status(429).json({error:'Too many authentication attempts. Please try again later.'});next();}
+function cleanupRateLimitMap(map,now){for(const [key,entry] of map){const windowMs=entry?.start===undefined?0:(map===authRequests?AUTH_RATE_WINDOW_MS:RATE_WINDOW_MS);if(now-entry.start>=windowMs)map.delete(key);}}
+const rateLimitCleanupTimer=setInterval(()=>{const now=Date.now();cleanupRateLimitMap(requests,now);cleanupRateLimitMap(authRequests,now);},RATE_LIMIT_CLEANUP_INTERVAL_MS);rateLimitCleanupTimer.unref();
 function sameOrigin(req,res,next){if(process.env.NODE_ENV!=='production')return next();const origin=req.get('origin');if(!origin)return next();const host=req.get('host');const proto=(req.get('x-forwarded-proto')||req.protocol).split(',')[0].trim();if(origin!==`${proto}://${host}`)return res.status(403).json({error:'Cross-origin request blocked.'});next();}
 app.use('/api/auth',(req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});app.use('/api/conversations',(req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});app.use('/api/history',(req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
 function extractSources(response){const out=[];for(const item of response.output??[])for(const c of item.content??[])for(const a of c.annotations??[])if(item.type==='message'&&c.type==='output_text'&&a.type==='url_citation'&&a.url&&!out.some(x=>x.url===a.url))out.push({title:a.title||a.url,url:a.url});return out.slice(0,10);}
