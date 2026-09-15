@@ -1,6 +1,17 @@
+import express from 'express';
+import { registerBillingRoutes } from './billing-routes.js';
 import { closeDb } from './db.js';
 
 let shuttingDown = false;
+const originalUse = express.application.use;
+const billingMounted = Symbol.for('global-ai-assistant.billing-bootstrap');
+express.application.use = function patchedUse(...args) {
+  if (!this[billingMounted]) {
+    registerBillingRoutes(this);
+    this[billingMounted] = true;
+  }
+  return originalUse.apply(this, args);
+};
 
 function findHttpServers() {
   return process._getActiveHandles().filter(handle =>
