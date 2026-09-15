@@ -3,11 +3,11 @@
 A global, multilingual AI assistant MVP.
 
 ## Current MVP
-- Responsive web chat UI
-- Multilingual conversations
-- OpenAI API through a secure server-side endpoint
-- Short conversation history
-- Health/configuration endpoint
+- Multilingual chat
+- Conversation context during the session
+- Responsive web UI
+- Secure server-side OpenAI API usage
+- Health endpoint
 
 ## Run locally
 
