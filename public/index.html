@@ -3,34 +3,77 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b0d12" />
   <title>Global AI Assistant</title>
-  <meta name="description" content="A simple multilingual AI assistant MVP." />
+  <meta name="description" content="A global multilingual AI assistant." />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <main class="app">
-    <header class="header">
-      <div>
-        <div class="badge">GLOBAL AI</div>
-        <h1>Global AI Assistant</h1>
-        <p>Ask anything. Write in your language.</p>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">G</span><span>Global AI</span></div>
+      <button id="new-chat" class="new-chat" type="button">＋ New chat</button>
+      <div class="sidebar-section">
+        <span class="section-label">Current session</span>
+        <div class="history-item active">💬 <span>AI Assistant</span></div>
       </div>
-      <span id="status" class="status">Checking AI…</span>
-    </header>
-
-    <section id="chat" class="chat" aria-live="polite">
-      <div class="message assistant">
-        <div class="avatar">AI</div>
-        <div class="bubble">Hi! I’m your Global AI Assistant. Ask me something in English, Hindi, Marathi, or another language.</div>
+      <div class="sidebar-footer">
+        <span class="mini-dot"></span>
+        <span id="sidebar-status">Connecting…</span>
       </div>
-    </section>
+    </aside>
 
-    <form id="chat-form" class="composer">
-      <textarea id="message" rows="2" placeholder="Type your message…" autocomplete="off" required></textarea>
-      <button id="send" type="submit">Send</button>
-    </form>
-    <p class="note">MVP v0.1 • Never put your API key in the browser or GitHub.</p>
-  </main>
+    <main class="app">
+      <header class="header">
+        <div>
+          <div class="eyebrow">GLOBAL AI ASSISTANT</div>
+          <h1>What can I help you with?</h1>
+          <p>Ask questions, solve problems, write, learn, or build — in your language.</p>
+        </div>
+        <div class="header-actions">
+          <label class="language-wrap" for="language">
+            <span>Language</span>
+            <select id="language" aria-label="Response language">
+              <option value="auto">Auto detect</option>
+              <option value="en">English</option>
+              <option value="hi">हिन्दी</option>
+              <option value="mr">मराठी</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="de">Deutsch</option>
+              <option value="pt">Português</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+              <option value="ar">العربية</option>
+            </select>
+          </label>
+          <span id="status" class="status">Checking…</span>
+        </div>
+      </header>
+
+      <section id="chat" class="chat" aria-live="polite">
+        <div class="welcome-card">
+          <div class="welcome-icon">✦</div>
+          <h2>Welcome to Global AI</h2>
+          <p>Your multilingual AI workspace. Start a conversation below.</p>
+          <div class="suggestions">
+            <button class="suggestion" type="button" data-prompt="Explain cloud computing in simple words.">☁️ Explain cloud computing</button>
+            <button class="suggestion" type="button" data-prompt="Help me write a professional email.">✍️ Write an email</button>
+            <button class="suggestion" type="button" data-prompt="Teach me Linux system administration step by step.">🛠️ Learn a skill</button>
+          </div>
+        </div>
+      </section>
+
+      <form id="chat-form" class="composer">
+        <textarea id="message" rows="2" maxlength="8000" placeholder="Message Global AI…" autocomplete="off" required></textarea>
+        <div class="composer-bottom">
+          <span>Shift + Enter for a new line</span>
+          <button id="send" type="submit"><span>Send</span><b>↑</b></button>
+        </div>
+      </form>
+      <p class="note">Global AI is an AI assistant. Verify important information before making decisions.</p>
+    </main>
+  </div>
   <script src="/app.js"></script>
 </body>
 </html>
