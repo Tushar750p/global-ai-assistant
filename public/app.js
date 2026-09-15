@@ -11,8 +11,10 @@ const fileChip = document.querySelector('#file-chip');
 const fileName = document.querySelector('#file-name');
 const removeFile = document.querySelector('#remove-file');
 const uploadStatus = document.querySelector('#upload-status');
+const webSearch = document.querySelector('#web-search');
 const STORAGE_KEY = 'global-ai-chat-v1';
 const LANGUAGE_KEY = 'global-ai-language-v1';
+const WEB_SEARCH_KEY = 'global-ai-web-search-v1';
 
 let history = loadHistory();
 let attachedFileId = null;
@@ -37,6 +39,28 @@ function addMessage(role, text) {
   bubble.textContent = text;
   wrapper.append(avatar, bubble);
   chat.appendChild(wrapper);
+  chat.scrollTop = chat.scrollHeight;
+  return bubble;
+}
+
+function addSources(sources) {
+  if (!Array.isArray(sources) || !sources.length) return;
+  const block = document.createElement('div');
+  block.className = 'sources';
+  const title = document.createElement('div');
+  title.className = 'sources-title';
+  title.textContent = 'Sources';
+  block.appendChild(title);
+  sources.forEach(source => {
+    if (!source || typeof source.url !== 'string' || !/^https?:\/\//i.test(source.url)) return;
+    const link = document.createElement('a');
+    link.href = source.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = source.title || source.url;
+    block.appendChild(link);
+  });
+  if (block.querySelector('a')) chat.appendChild(block);
   chat.scrollTop = chat.scrollHeight;
 }
 
@@ -106,12 +130,18 @@ form.addEventListener('submit', async event => {
   const languageInstruction = getLanguageInstruction();
   const finalMessage = languageInstruction ? `${languageInstruction}\n\n${message}` : message;
   const currentFileId = attachedFileId;
+  const useWebSearch = webSearch.checked;
 
   try {
-    const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ message: finalMessage, history: requestHistory, fileId: currentFileId }) });
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ message: finalMessage, history: requestHistory, fileId: currentFileId, webSearch: useWebSearch })
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Request failed');
     addMessage('assistant', data.reply);
+    addSources(data.sources);
     history.push({ role: 'user', content: message }, { role: 'assistant', content: data.reply });
     saveHistory();
   } catch (error) {
@@ -126,6 +156,8 @@ form.addEventListener('submit', async event => {
 newChat.addEventListener('click', () => { history = []; localStorage.removeItem(STORAGE_KEY); attachedFileId = null; fileChip.hidden = true; renderHistory(); input.focus(); });
 language.value = localStorage.getItem(LANGUAGE_KEY) || 'auto';
 language.addEventListener('change', () => localStorage.setItem(LANGUAGE_KEY, language.value));
+webSearch.checked = localStorage.getItem(WEB_SEARCH_KEY) === 'true';
+webSearch.addEventListener('change', () => localStorage.setItem(WEB_SEARCH_KEY, String(webSearch.checked)));
 input.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); form.requestSubmit(); } });
 renderHistory();
 checkHealth();
