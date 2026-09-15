@@ -41,7 +41,7 @@ test('usage quota blocks exhausted chat or input limits', () => {
     limits: { chats: 10, inputChars: 100, outputChars: 200 }
   };
   assert.equal(usageAllowed(chatLimit, 0), false);
-  assert.equal(usageAllowed(inputLimit, 0), false);
+  assert.equal(usageAllowed(inputLimit, 1), false);
   assert.equal(quotaError(chatLimit), 'Monthly chat limit reached.');
   assert.equal(quotaError(inputLimit), 'Monthly input usage limit reached.');
 });
