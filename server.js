@@ -4,7 +4,6 @@ import multer from 'multer';
 import OpenAI from 'openai';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import fs from 'node:fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,6 +59,23 @@ function rateLimit(req, res, next) {
   next();
 }
 
+function extractSources(response) {
+  const sources = [];
+  for (const item of response.output ?? []) {
+    if (item.type !== 'message') continue;
+    for (const content of item.content ?? []) {
+      if (content.type !== 'output_text') continue;
+      for (const annotation of content.annotations ?? []) {
+        if (annotation.type !== 'url_citation' || !annotation.url) continue;
+        if (!sources.some(source => source.url === annotation.url)) {
+          sources.push({ title: annotation.title || annotation.url, url: annotation.url });
+        }
+      }
+    }
+  }
+  return sources.slice(0, 10);
+}
+
 app.get('/api/health', (_req, res) => res.json({ ok: true, aiConfigured: Boolean(client) }));
 
 app.post('/api/files', rateLimit, upload.single('file'), async (req, res) => {
@@ -79,12 +95,13 @@ app.post('/api/files', rateLimit, upload.single('file'), async (req, res) => {
 });
 
 app.post('/api/chat', rateLimit, async (req, res) => {
-  const { message, history = [], fileId = null } = req.body ?? {};
+  const { message, history = [], fileId = null, webSearch = false } = req.body ?? {};
 
   if (typeof message !== 'string' || !message.trim()) return res.status(400).json({ error: 'Please provide a message.' });
   const cleanMessage = message.trim();
   if (cleanMessage.length > MAX_MESSAGE_LENGTH) return res.status(413).json({ error: `Message is too long. Maximum is ${MAX_MESSAGE_LENGTH} characters.` });
   if (fileId !== null && (typeof fileId !== 'string' || !/^file-[A-Za-z0-9_-]+$/.test(fileId))) return res.status(400).json({ error: 'Invalid file reference.' });
+  if (typeof webSearch !== 'boolean') return res.status(400).json({ error: 'Invalid web search setting.' });
   if (!client) return res.status(503).json({ error: 'AI is not configured yet.' });
 
   const safeHistory = Array.isArray(history)
@@ -104,11 +121,15 @@ app.post('/api/chat', rateLimit, async (req, res) => {
 
     const response = await client.responses.create({
       model: process.env.OPENAI_MODEL || 'gpt-5.6-luna',
-      instructions: 'You are Global AI Assistant, a helpful multilingual AI assistant. Reply in the language the user uses unless they ask for another language. If a document is attached, answer from it when relevant and clearly say when the document does not contain enough information. Be clear, practical, and honest about uncertainty.',
-      input
+      instructions: 'You are Global AI Assistant, a helpful multilingual AI assistant. Reply in the language the user uses unless they ask for another language. If a document is attached, answer from it when relevant and clearly say when the document does not contain enough information. When web search is enabled, use current web information when useful, prefer authoritative sources, and make it clear which claims depend on web sources. Be clear, practical, and honest about uncertainty.',
+      input,
+      ...(webSearch ? { tools: [{ type: 'web_search' }] } : {})
     });
 
-    res.json({ reply: response.output_text || 'I could not generate a response.' });
+    res.json({
+      reply: response.output_text || 'I could not generate a response.',
+      sources: webSearch ? extractSources(response) : []
+    });
   } catch (error) {
     console.error('OpenAI request failed:', error?.message || error);
     res.status(502).json({ error: 'The AI service could not complete the request. Please try again.' });
