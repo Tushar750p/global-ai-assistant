@@ -5,7 +5,17 @@ let pool;
 
 export function getPool() {
   if (!process.env.DATABASE_URL) return null;
-  if (!pool) pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false } });
+  if (!pool) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: Number(process.env.DATABASE_POOL_MAX) || 10,
+      idleTimeoutMillis: Number(process.env.DATABASE_IDLE_TIMEOUT_MS) || 30000,
+      connectionTimeoutMillis: Number(process.env.DATABASE_CONNECTION_TIMEOUT_MS) || 5000,
+      maxLifetimeSeconds: Number(process.env.DATABASE_MAX_LIFETIME_SECONDS) || 300,
+      ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false }
+    });
+    pool.on('error', error => console.error('PostgreSQL pool error:', error?.message || error));
+  }
   return pool;
 }
 
