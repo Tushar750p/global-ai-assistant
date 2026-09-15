@@ -6,196 +6,36 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getPool, query, initDb } from './db.js';
 import { clearSessionCookie, createSession, deleteSession, getSessionUser, hashPassword, sessionCookie, validateCredentials, verifyPassword, normalizeEmail } from './auth.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const app = express();
-const port = Number(process.env.PORT) || 3000;
-const client = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
-
-const MAX_MESSAGE_LENGTH = 8000;
-const MAX_HISTORY_ITEMS = 12;
-const MAX_HISTORY_ITEM_LENGTH = 8000;
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const MAX_AUDIO_SIZE = 15 * 1024 * 1024;
-const ALLOWED_FILE_TYPES = new Set(['application/pdf', 'text/plain', 'text/csv', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
-const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
-const ALLOWED_AUDIO_TYPES = new Set(['audio/webm', 'audio/ogg', 'audio/wav', 'audio/mpeg', 'audio/mp4']);
-const RATE_WINDOW_MS = 60_000;
-const RATE_LIMIT = 30;
-const requests = new Map();
-
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE, files: 1 }, fileFilter: (_req, file, cb) => cb(null, ALLOWED_FILE_TYPES.has(file.mimetype)) });
-const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE, files: 1 }, fileFilter: (_req, file, cb) => cb(null, ALLOWED_IMAGE_TYPES.has(file.mimetype)) });
-const audioUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_AUDIO_SIZE, files: 1 }, fileFilter: (_req, file, cb) => cb(null, ALLOWED_AUDIO_TYPES.has(file.mimetype)) });
-
-app.disable('x-powered-by');
-app.use(express.json({ limit: '1mb' }));
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('X-Frame-Options', 'DENY');
-  next();
-});
-
-function clientKey(req) { return req.ip || req.socket.remoteAddress || 'unknown'; }
-function rateLimit(req, res, next) {
-  const now = Date.now(); const key = clientKey(req); const entry = requests.get(key);
-  if (!entry || now - entry.start >= RATE_WINDOW_MS) { requests.set(key, { start: now, count: 1 }); return next(); }
-  entry.count += 1;
-  if (entry.count > RATE_LIMIT) return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
-  next();
-}
-function extractSources(response) {
-  const sources = [];
-  for (const item of response.output ?? []) {
-    if (item.type !== 'message') continue;
-    for (const content of item.content ?? []) {
-      if (content.type !== 'output_text') continue;
-      for (const annotation of content.annotations ?? []) {
-        if (annotation.type !== 'url_citation' || !annotation.url) continue;
-        if (!sources.some(source => source.url === annotation.url)) sources.push({ title: annotation.title || annotation.url, url: annotation.url });
-      }
-    }
-  }
-  return sources.slice(0, 10);
-}
-function requireDatabase(res) { if (!getPool()) { res.status(503).json({ error: 'Cloud accounts are not configured yet. Add DATABASE_URL to enable login and cloud history.' }); return false; } return true; }
-
-app.get('/api/health', (_req, res) => res.json({ ok: true, aiConfigured: Boolean(client), databaseConfigured: Boolean(getPool()) }));
-
-app.post('/api/auth/register', rateLimit, async (req, res) => {
-  if (!requireDatabase(res)) return;
-  const { email, password } = req.body ?? {};
-  const error = validateCredentials(email, password);
-  if (error) return res.status(400).json({ error });
-  const normalized = normalizeEmail(email);
-  try {
-    const passwordHash = await hashPassword(password);
-    const result = await query('INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email', [normalized, passwordHash]);
-    const token = await createSession(result.rows[0].id);
-    res.setHeader('Set-Cookie', sessionCookie(token));
-    res.status(201).json({ user: result.rows[0] });
-  } catch (error) {
-    if (error?.code === '23505') return res.status(409).json({ error: 'An account with that email already exists.' });
-    console.error('Registration failed:', error?.message || error);
-    res.status(500).json({ error: 'Could not create the account.' });
-  }
-});
-
-app.post('/api/auth/login', rateLimit, async (req, res) => {
-  if (!requireDatabase(res)) return;
-  const { email, password } = req.body ?? {};
-  const error = validateCredentials(email, password);
-  if (error) return res.status(400).json({ error });
-  try {
-    const { rows } = await query('SELECT id, email, password_hash FROM users WHERE email = $1', [normalizeEmail(email)]);
-    if (!rows[0] || !(await verifyPassword(password, rows[0].password_hash))) return res.status(401).json({ error: 'Invalid email or password.' });
-    await query('DELETE FROM sessions WHERE expires_at <= NOW()');
-    const token = await createSession(rows[0].id);
-    res.setHeader('Set-Cookie', sessionCookie(token));
-    res.json({ user: { id: rows[0].id, email: rows[0].email } });
-  } catch (error) { console.error('Login failed:', error?.message || error); res.status(500).json({ error: 'Could not sign in.' }); }
-});
-
-app.post('/api/auth/logout', rateLimit, async (req, res) => {
-  if (getPool()) { try { await deleteSession(req); } catch (error) { console.error('Logout failed:', error?.message || error); } }
-  res.setHeader('Set-Cookie', clearSessionCookie());
-  res.json({ ok: true });
-});
-
-app.get('/api/auth/me', async (req, res) => {
-  if (!getPool()) return res.json({ authenticated: false, databaseConfigured: false });
-  try { const user = await getSessionUser(req); res.json({ authenticated: Boolean(user), user }); }
-  catch (error) { console.error('Session lookup failed:', error?.message || error); res.status(500).json({ error: 'Could not check the session.' }); }
-});
-
-app.get('/api/history', async (req, res) => {
-  if (!requireDatabase(res)) return;
-  try {
-    const user = await getSessionUser(req);
-    if (!user) return res.status(401).json({ error: 'Please sign in to access cloud history.' });
-    const { rows } = await query('SELECT role, content, created_at FROM chat_messages WHERE user_id = $1 ORDER BY created_at ASC LIMIT 200', [user.id]);
-    res.json({ history: rows.map(row => ({ role: row.role, content: row.content })) });
-  } catch (error) { console.error('History load failed:', error?.message || error); res.status(500).json({ error: 'Could not load cloud history.' }); }
-});
-
-app.post('/api/history', async (req, res) => {
-  if (!requireDatabase(res)) return;
-  try {
-    const user = await getSessionUser(req);
-    if (!user) return res.status(401).json({ error: 'Please sign in to save cloud history.' });
-    const { messages } = req.body ?? {};
-    if (!Array.isArray(messages) || messages.length > 20) return res.status(400).json({ error: 'Invalid history payload.' });
-    for (const item of messages) {
-      if (!item || !['user', 'assistant'].includes(item.role) || typeof item.content !== 'string' || !item.content.trim() || item.content.length > MAX_HISTORY_ITEM_LENGTH) return res.status(400).json({ error: 'Invalid history message.' });
-      await query('INSERT INTO chat_messages (user_id, role, content) VALUES ($1, $2, $3)', [user.id, item.role, item.content.trim()]);
-    }
-    res.status(201).json({ ok: true });
-  } catch (error) { console.error('History save failed:', error?.message || error); res.status(500).json({ error: 'Could not save cloud history.' }); }
-});
-
-app.post('/api/files', rateLimit, upload.single('file'), async (req, res) => {
-  if (!client) return res.status(503).json({ error: 'AI is not configured yet.' });
-  if (!req.file) return res.status(400).json({ error: 'Please upload a supported file: PDF, TXT, CSV, DOCX, or XLSX.' });
-  try { const file = await client.files.create({ file: new File([req.file.buffer], req.file.originalname, { type: req.file.mimetype }), purpose: 'user_data' }); res.json({ fileId: file.id, name: req.file.originalname, size: req.file.size, type: req.file.mimetype }); }
-  catch (error) { console.error('File upload failed:', error?.message || error); res.status(502).json({ error: 'The AI service could not process this file.' }); }
-});
-
-app.post('/api/images', rateLimit, imageUpload.single('image'), async (req, res) => {
-  if (!client) return res.status(503).json({ error: 'AI is not configured yet.' });
-  if (!req.file) return res.status(400).json({ error: 'Please upload a supported image: PNG, JPG, WEBP, or GIF.' });
-  const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
-  res.json({ image: dataUrl, name: req.file.originalname, size: req.file.size, type: req.file.mimetype });
-});
-
-app.post('/api/transcribe', rateLimit, audioUpload.single('audio'), async (req, res) => {
-  if (!client) return res.status(503).json({ error: 'AI is not configured yet.' });
-  if (!req.file) return res.status(400).json({ error: 'Please provide a supported audio recording.' });
-  try { const result = await client.audio.transcriptions.create({ file: new File([req.file.buffer], req.file.originalname || 'voice.webm', { type: req.file.mimetype }), model: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe' }); res.json({ text: result.text || '' }); }
-  catch (error) { console.error('Transcription failed:', error?.message || error); res.status(502).json({ error: 'Speech could not be transcribed.' }); }
-});
-
-app.post('/api/speech', rateLimit, async (req, res) => {
-  const { text } = req.body ?? {};
-  if (typeof text !== 'string' || !text.trim()) return res.status(400).json({ error: 'Please provide text.' });
-  if (text.length > 8000) return res.status(413).json({ error: 'Text is too long for speech generation.' });
-  if (!client) return res.status(503).json({ error: 'AI is not configured yet.' });
-  try { const speech = await client.audio.speech.create({ model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts', voice: process.env.OPENAI_TTS_VOICE || 'coral', input: text, response_format: 'mp3' }); const buffer = Buffer.from(await speech.arrayBuffer()); res.json({ audio: `data:audio/mpeg;base64,${buffer.toString('base64')}` }); }
-  catch (error) { console.error('Speech generation failed:', error?.message || error); res.status(502).json({ error: 'Voice response could not be generated.' }); }
-});
-
-app.post('/api/chat', rateLimit, async (req, res) => {
-  const { message, history = [], fileId = null, webSearch = false, imageData = null } = req.body ?? {};
-  if (typeof message !== 'string' || !message.trim()) return res.status(400).json({ error: 'Please provide a message.' });
-  const cleanMessage = message.trim();
-  if (cleanMessage.length > MAX_MESSAGE_LENGTH) return res.status(413).json({ error: `Message is too long. Maximum is ${MAX_MESSAGE_LENGTH} characters.` });
-  if (fileId !== null && (typeof fileId !== 'string' || !/^file-[A-Za-z0-9_-]+$/.test(fileId))) return res.status(400).json({ error: 'Invalid file reference.' });
-  if (typeof webSearch !== 'boolean') return res.status(400).json({ error: 'Invalid web search setting.' });
-  if (imageData !== null && (typeof imageData !== 'string' || !/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(imageData) || imageData.length > 14 * 1024 * 1024)) return res.status(400).json({ error: 'Invalid or oversized image.' });
-  if (!client) return res.status(503).json({ error: 'AI is not configured yet.' });
-  const safeHistory = Array.isArray(history) ? history.slice(-MAX_HISTORY_ITEMS).filter(item => item && ['user', 'assistant'].includes(item.role) && typeof item.content === 'string' && item.content.trim() && item.content.length <= MAX_HISTORY_ITEM_LENGTH).map(item => ({ role: item.role, content: item.content.trim() })) : [];
-  try {
-    const content = [...(imageData ? [{ type: 'input_image', image_url: imageData, detail: 'auto' }] : []), ...(fileId ? [{ type: 'input_file', file_id: fileId }] : []), { type: 'input_text', text: cleanMessage }];
-    const response = await client.responses.create({ model: process.env.OPENAI_MODEL || 'gpt-5.6-luna', instructions: 'You are Global AI Assistant, a helpful multilingual AI assistant. Reply in the language the user uses unless they ask for another language. If a document or image is attached, analyze it when relevant and clearly distinguish what is visible or supported by the attachment from assumptions. When web search is enabled, use current web information when useful, prefer authoritative sources, and make it clear which claims depend on web sources. Be clear, practical, and honest about uncertainty.', input: [...safeHistory, { role: 'user', content }], ...(webSearch ? { tools: [{ type: 'web_search' }] } : {}) });
-    const reply = response.output_text || 'I could not generate a response.';
-    let cloudSaved = false;
-    if (getPool()) {
-      try {
-        const user = await getSessionUser(req);
-        if (user) { await query('INSERT INTO chat_messages (user_id, role, content) VALUES ($1, $2, $3), ($1, $4, $5)', [user.id, 'user', cleanMessage, 'assistant', reply]); cloudSaved = true; }
-      } catch (historyError) { console.error('Automatic history save failed:', historyError?.message || historyError); }
-    }
-    res.json({ reply, sources: webSearch ? extractSources(response) : [], cloudSaved });
-  } catch (error) { console.error('OpenAI request failed:', error?.message || error); res.status(502).json({ error: 'The AI service could not complete the request. Please try again.' }); }
-});
-
-app.use(express.static(path.join(__dirname, 'public')));
-app.get(/.*/, (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
-async function start() {
-  try { await initDb(); if (getPool()) console.log('PostgreSQL database initialized.'); }
-  catch (error) { console.error('Database initialization failed:', error?.message || error); }
-  app.listen(port, () => console.log(`Global AI Assistant running on http://localhost:${port}`));
-}
-start();
+const __filename=fileURLToPath(import.meta.url),__dirname=path.dirname(__filename),app=express(),port=Number(process.env.PORT)||3000;
+const client=process.env.OPENAI_API_KEY?new OpenAI({apiKey:process.env.OPENAI_API_KEY}):null;
+const MAX_MESSAGE_LENGTH=8000,MAX_HISTORY_ITEMS=12,MAX_HISTORY_ITEM_LENGTH=8000,MAX_FILE_SIZE=10*1024*1024,MAX_AUDIO_SIZE=15*1024*1024,RATE_WINDOW_MS=60000,RATE_LIMIT=30,requests=new Map();
+const ALLOWED_FILE_TYPES=new Set(['application/pdf','text/plain','text/csv','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+const ALLOWED_IMAGE_TYPES=new Set(['image/png','image/jpeg','image/webp','image/gif']),ALLOWED_AUDIO_TYPES=new Set(['audio/webm','audio/ogg','audio/wav','audio/mpeg','audio/mp4']);
+const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:MAX_FILE_SIZE,files:1},fileFilter:(_r,f,cb)=>cb(null,ALLOWED_FILE_TYPES.has(f.mimetype))});
+const imageUpload=multer({storage:multer.memoryStorage(),limits:{fileSize:MAX_FILE_SIZE,files:1},fileFilter:(_r,f,cb)=>cb(null,ALLOWED_IMAGE_TYPES.has(f.mimetype))});
+const audioUpload=multer({storage:multer.memoryStorage(),limits:{fileSize:MAX_AUDIO_SIZE,files:1},fileFilter:(_r,f,cb)=>cb(null,ALLOWED_AUDIO_TYPES.has(f.mimetype))});
+app.disable('x-powered-by');app.use(express.json({limit:'1mb'}));app.use((req,res,next)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');next();});
+const clientKey=req=>req.ip||req.socket.remoteAddress||'unknown';
+function rateLimit(req,res,next){const now=Date.now(),key=clientKey(req),e=requests.get(key);if(!e||now-e.start>=RATE_WINDOW_MS){requests.set(key,{start:now,count:1});return next();}if(++e.count>RATE_LIMIT)return res.status(429).json({error:'Too many requests. Please wait a minute and try again.'});next();}
+function extractSources(response){const out=[];for(const item of response.output??[])for(const c of item.content??[])for(const a of c.annotations??[])if(item.type==='message'&&c.type==='output_text'&&a.type==='url_citation'&&a.url&&!out.some(x=>x.url===a.url))out.push({title:a.title||a.url,url:a.url});return out.slice(0,10);}
+function dbRequired(res){if(!getPool()){res.status(503).json({error:'Cloud accounts are not configured yet. Add DATABASE_URL to enable login and cloud history.'});return false;}return true;}
+async function userFrom(req){if(!getPool())return null;try{return await getSessionUser(req);}catch{return null;}}
+app.get('/api/health',(_r,s)=>s.json({ok:true,aiConfigured:Boolean(client),databaseConfigured:Boolean(getPool())}));
+app.post('/api/auth/register',rateLimit,async(req,res)=>{if(!dbRequired(res))return;const {email,password}=req.body??{},e=validateCredentials(email,password);if(e)return res.status(400).json({error:e});try{const r=await query('INSERT INTO users(email,password_hash) VALUES($1,$2) RETURNING id,email',[normalizeEmail(email),await hashPassword(password)]),t=await createSession(r.rows[0].id);res.setHeader('Set-Cookie',sessionCookie(t));res.status(201).json({user:r.rows[0]});}catch(e){if(e?.code==='23505')return res.status(409).json({error:'An account with that email already exists.'});res.status(500).json({error:'Could not create the account.'});}});
+app.post('/api/auth/login',rateLimit,async(req,res)=>{if(!dbRequired(res))return;const {email,password}=req.body??{},e=validateCredentials(email,password);if(e)return res.status(400).json({error:e});try{const r=await query('SELECT id,email,password_hash FROM users WHERE email=$1',[normalizeEmail(email)]);if(!r.rows[0]||!(await verifyPassword(password,r.rows[0].password_hash)))return res.status(401).json({error:'Invalid email or password.'});const t=await createSession(r.rows[0].id);res.setHeader('Set-Cookie',sessionCookie(t));res.json({user:{id:r.rows[0].id,email:r.rows[0].email}});}catch(e){res.status(500).json({error:'Could not sign in.'});}});
+app.post('/api/auth/logout',rateLimit,async(req,res)=>{try{if(getPool())await deleteSession(req);}catch{}res.setHeader('Set-Cookie',clearSessionCookie());res.json({ok:true});});
+app.get('/api/auth/me',async(req,res)=>{if(!getPool())return res.json({authenticated:false,databaseConfigured:false});try{const user=await getSessionUser(req);res.json({authenticated:Boolean(user),user});}catch{res.status(500).json({error:'Could not check the session.'});}});
+app.get('/api/conversations',rateLimit,async(req,res)=>{if(!dbRequired(res))return;try{const u=await userFrom(req);if(!u)return res.status(401).json({error:'Please sign in.'});const r=await query('SELECT id,title,created_at,updated_at FROM conversations WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 100',[u.id]);res.json({conversations:r.rows});}catch{res.status(500).json({error:'Could not load conversations.'});}});
+app.post('/api/conversations',rateLimit,async(req,res)=>{if(!dbRequired(res))return;try{const u=await userFrom(req);if(!u)return res.status(401).json({error:'Please sign in.'});const title=typeof req.body?.title==='string'&&req.body.title.trim()?req.body.title.trim().slice(0,120):'New chat';const r=await query('INSERT INTO conversations(user_id,title) VALUES($1,$2) RETURNING id,title,created_at,updated_at',[u.id,title]);res.status(201).json({conversation:r.rows[0]});}catch{res.status(500).json({error:'Could not create conversation.'});}});
+app.get('/api/conversations/:id',rateLimit,async(req,res)=>{if(!dbRequired(res))return;const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'Invalid conversation.'});try{const u=await userFrom(req);if(!u)return res.status(401).json({error:'Please sign in.'});const c=await query('SELECT id,title,created_at,updated_at FROM conversations WHERE id=$1 AND user_id=$2',[id,u.id]);if(!c.rows[0])return res.status(404).json({error:'Conversation not found.'});const m=await query('SELECT role,content,created_at FROM chat_messages WHERE conversation_id=$1 AND user_id=$2 ORDER BY created_at ASC,id ASC',[id,u.id]);res.json({conversation:c.rows[0],messages:m.rows});}catch{res.status(500).json({error:'Could not load conversation.'});}});
+app.patch('/api/conversations/:id',rateLimit,async(req,res)=>{if(!dbRequired(res))return;const id=Number(req.params.id),title=req.body?.title;if(!Number.isSafeInteger(id)||id<1||typeof title!=='string'||!title.trim())return res.status(400).json({error:'A valid title is required.'});try{const u=await userFrom(req);if(!u)return res.status(401).json({error:'Please sign in.'});const r=await query('UPDATE conversations SET title=$1,updated_at=NOW() WHERE id=$2 AND user_id=$3 RETURNING id,title,created_at,updated_at',[title.trim().slice(0,120),id,u.id]);if(!r.rows[0])return res.status(404).json({error:'Conversation not found.'});res.json({conversation:r.rows[0]});}catch{res.status(500).json({error:'Could not rename conversation.'});}});
+app.delete('/api/conversations/:id',rateLimit,async(req,res)=>{if(!dbRequired(res))return;const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'Invalid conversation.'});try{const u=await userFrom(req);if(!u)return res.status(401).json({error:'Please sign in.'});const r=await query('DELETE FROM conversations WHERE id=$1 AND user_id=$2',[id,u.id]);if(!r.rowCount)return res.status(404).json({error:'Conversation not found.'});res.json({ok:true});}catch{res.status(500).json({error:'Could not delete conversation.'});}});
+app.get('/api/history',async(req,res)=>{if(!dbRequired(res))return;try{const u=await userFrom(req);if(!u)return res.status(401).json({error:'Please sign in.'});const r=await query('SELECT role,content FROM chat_messages WHERE user_id=$1 AND conversation_id IS NULL ORDER BY created_at ASC LIMIT 200',[u.id]);res.json({history:r.rows});}catch{res.status(500).json({error:'Could not load cloud history.'});}});
+app.post('/api/history',async(req,res)=>{if(!dbRequired(res))return;try{const u=await userFrom(req);if(!u)return res.status(401).json({error:'Please sign in.'});const {messages}=req.body??{};if(!Array.isArray(messages)||messages.length>20)return res.status(400).json({error:'Invalid history payload.'});for(const m of messages){if(!m||!['user','assistant'].includes(m.role)||typeof m.content!=='string'||!m.content.trim()||m.content.length>MAX_HISTORY_ITEM_LENGTH)return res.status(400).json({error:'Invalid history message.'});await query('INSERT INTO chat_messages(user_id,role,content) VALUES($1,$2,$3)',[u.id,m.role,m.content.trim()]);}res.status(201).json({ok:true});}catch{res.status(500).json({error:'Could not save cloud history.'});}});
+app.post('/api/files',rateLimit,upload.single('file'),async(req,res)=>{if(!client)return res.status(503).json({error:'AI is not configured yet.'});if(!req.file)return res.status(400).json({error:'Please upload a supported file: PDF, TXT, CSV, DOCX, or XLSX.'});try{const f=await client.files.create({file:new File([req.file.buffer],req.file.originalname,{type:req.file.mimetype}),purpose:'user_data'});res.json({fileId:f.id,name:req.file.originalname,size:req.file.size,type:req.file.mimetype});}catch{res.status(502).json({error:'The AI service could not process this file.'});}});
+app.post('/api/images',rateLimit,imageUpload.single('image'),async(req,res)=>{if(!client)return res.status(503).json({error:'AI is not configured yet.'});if(!req.file)return res.status(400).json({error:'Please upload a supported image: PNG, JPG, WEBP, or GIF.'});res.json({image:`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,name:req.file.originalname,size:req.file.size,type:req.file.mimetype});});
+app.post('/api/transcribe',rateLimit,audioUpload.single('audio'),async(req,res)=>{if(!client)return res.status(503).json({error:'AI is not configured yet.'});if(!req.file)return res.status(400).json({error:'Please provide a supported audio recording.'});try{const r=await client.audio.transcriptions.create({file:new File([req.file.buffer],req.file.originalname||'voice.webm',{type:req.file.mimetype}),model:process.env.OPENAI_TRANSCRIBE_MODEL||'gpt-4o-transcribe'});res.json({text:r.text||''});}catch{res.status(502).json({error:'Speech could not be transcribed.'});}});
+app.post('/api/speech',rateLimit,async(req,res)=>{const {text}=req.body??{};if(typeof text!=='string'||!text.trim())return res.status(400).json({error:'Please provide text.'});if(text.length>8000)return res.status(413).json({error:'Text is too long for speech generation.'});if(!client)return res.status(503).json({error:'AI is not configured yet.'});try{const s=await client.audio.speech.create({model:process.env.OPENAI_TTS_MODEL||'gpt-4o-mini-tts',voice:process.env.OPENAI_TTS_VOICE||'coral',input:text,response_format:'mp3'}),b=Buffer.from(await s.arrayBuffer());res.json({audio:`data:audio/mpeg;base64,${b.toString('base64')}`});}catch{res.status(502).json({error:'Voice response could not be generated.'});}});
+app.post('/api/chat',rateLimit,async(req,res)=>{const {message,history=[],fileId=null,webSearch=false,imageData=null,conversationId=null}=req.body??{};if(typeof message!=='string'||!message.trim())return res.status(400).json({error:'Please provide a message.'});const clean=message.trim();if(clean.length>MAX_MESSAGE_LENGTH)return res.status(413).json({error:`Message is too long. Maximum is ${MAX_MESSAGE_LENGTH} characters.`});if(fileId!==null&&(typeof fileId!=='string'||!/^file-[A-Za-z0-9_-]+$/.test(fileId)))return res.status(400).json({error:'Invalid file reference.'});if(typeof webSearch!=='boolean')return res.status(400).json({error:'Invalid web search setting.'});if(imageData!==null&&(typeof imageData!=='string'||!/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(imageData)||imageData.length>14*1024*1024))return res.status(400).json({error:'Invalid or oversized image.'});if(!client)return res.status(503).json({error:'AI is not configured yet.'});const safe=Array.isArray(history)?history.slice(-MAX_HISTORY_ITEMS).filter(i=>i&&['user','assistant'].includes(i.role)&&typeof i.content==='string'&&i.content.trim()&&i.content.length<=MAX_HISTORY_ITEM_LENGTH).map(i=>({role:i.role,content:i.content.trim()})):[];try{const u=await userFrom(req);let cid=conversationId===null?null:Number(conversationId);if(cid&&!u)return res.status(401).json({error:'Please sign in to use cloud conversations.'});if(cid){const own=await query('SELECT id FROM conversations WHERE id=$1 AND user_id=$2',[cid,u.id]);if(!own.rows[0])return res.status(404).json({error:'Conversation not found.'});}const content=[...(imageData?[{type:'input_image',image_url:imageData,detail:'auto'}]:[]),...(fileId?[{type:'input_file',file_id:fileId}]:[]),{type:'input_text',text:clean}];const r=await client.responses.create({model:process.env.OPENAI_MODEL||'gpt-5.6-luna',instructions:'You are Global AI Assistant, a helpful multilingual AI assistant. Reply in the language the user uses unless they ask for another language. Be clear, practical, and honest about uncertainty.',input:[...safe,{role:'user',content}],...(webSearch?{tools:[{type:'web_search'}]}:{})});const reply=r.output_text||'I could not generate a response.';if(u){if(!cid){const c=await query('INSERT INTO conversations(user_id,title) VALUES($1,$2) RETURNING id',[u.id,clean.replace(/\s+/g,' ').slice(0,60)||'New chat']);cid=c.rows[0].id;}await query('INSERT INTO chat_messages(user_id,conversation_id,role,content) VALUES($1,$2,$3,$4),($1,$2,$5,$6)',[u.id,cid,'user',clean,'assistant',reply]);await query('UPDATE conversations SET updated_at=NOW() WHERE id=$1 AND user_id=$2',[cid,u.id]);}res.json({reply,sources:webSearch?extractSources(r):[],conversationId:cid,cloudSaved:Boolean(u)});}catch(e){console.error('OpenAI request failed:',e?.message||e);res.status(502).json({error:'The AI service could not complete the request. Please try again.'});}});
+app.use(express.static(path.join(__dirname,'public')));app.get(/.*/,(_r,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
+async function start(){try{await initDb();}catch(e){console.error('Database initialization failed:',e?.message||e);}app.listen(port,()=>console.log(`Global AI Assistant running on http://localhost:${port}`));}start();
