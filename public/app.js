@@ -10,6 +10,11 @@ const fileInput = document.querySelector('#file-input');
 const fileChip = document.querySelector('#file-chip');
 const fileName = document.querySelector('#file-name');
 const removeFile = document.querySelector('#remove-file');
+const imageInput = document.querySelector('#image-input');
+const imageChip = document.querySelector('#image-chip');
+const imagePreview = document.querySelector('#image-preview');
+const imageName = document.querySelector('#image-name');
+const removeImage = document.querySelector('#remove-image');
 const uploadStatus = document.querySelector('#upload-status');
 const webSearch = document.querySelector('#web-search');
 const STORAGE_KEY = 'global-ai-chat-v1';
@@ -18,6 +23,7 @@ const WEB_SEARCH_KEY = 'global-ai-web-search-v1';
 
 let history = loadHistory();
 let attachedFileId = null;
+let attachedImageData = null;
 
 function loadHistory() {
   try {
@@ -91,7 +97,7 @@ function getLanguageInstruction() {
 
 async function uploadFile(file) {
   if (!file) return;
-  uploadStatus.textContent = 'Uploading…';
+  uploadStatus.textContent = 'Uploading document…';
   fileInput.disabled = true;
   try {
     const formData = new FormData();
@@ -113,15 +119,45 @@ async function uploadFile(file) {
   }
 }
 
+async function uploadImage(file) {
+  if (!file) return;
+  uploadStatus.textContent = 'Preparing image…';
+  imageInput.disabled = true;
+  try {
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) throw new Error('Please choose PNG, JPG, WEBP, or GIF.');
+    if (file.size > 10 * 1024 * 1024) throw new Error('Image must be 10 MB or smaller.');
+    const formData = new FormData();
+    formData.append('image', file);
+    const res = await fetch('/api/images', { method: 'POST', body: formData, headers: { Accept: 'application/json' } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Image upload failed');
+    attachedImageData = data.image;
+    imagePreview.src = data.image;
+    imageName.textContent = data.name;
+    imageChip.hidden = false;
+    uploadStatus.textContent = 'Image ready';
+  } catch (error) {
+    attachedImageData = null;
+    imageChip.hidden = true;
+    uploadStatus.textContent = error.message;
+  } finally {
+    imageInput.disabled = false;
+    imageInput.value = '';
+  }
+}
+
 fileInput.addEventListener('change', () => uploadFile(fileInput.files?.[0]));
+imageInput.addEventListener('change', () => uploadImage(imageInput.files?.[0]));
 removeFile.addEventListener('click', () => { attachedFileId = null; fileChip.hidden = true; fileName.textContent = ''; uploadStatus.textContent = 'Files up to 10 MB'; });
+removeImage.addEventListener('click', () => { attachedImageData = null; imageChip.hidden = true; imagePreview.removeAttribute('src'); imageName.textContent = ''; uploadStatus.textContent = 'Files up to 10 MB'; });
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
   const message = input.value.trim();
   if (!message || send.disabled) return;
 
-  addMessage('user', attachedFileId ? `📎 ${fileName.textContent}\n${message}` : message);
+  const attachmentLabel = [attachedFileId ? `📎 ${fileName.textContent}` : '', attachedImageData ? `🖼️ ${imageName.textContent}` : ''].filter(Boolean).join('  ');
+  addMessage('user', attachmentLabel ? `${attachmentLabel}\n${message}` : message);
   input.value = '';
   send.disabled = true;
   send.querySelector('span').textContent = 'Thinking…';
@@ -130,13 +166,14 @@ form.addEventListener('submit', async event => {
   const languageInstruction = getLanguageInstruction();
   const finalMessage = languageInstruction ? `${languageInstruction}\n\n${message}` : message;
   const currentFileId = attachedFileId;
+  const currentImageData = attachedImageData;
   const useWebSearch = webSearch.checked;
 
   try {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ message: finalMessage, history: requestHistory, fileId: currentFileId, webSearch: useWebSearch })
+      body: JSON.stringify({ message: finalMessage, history: requestHistory, fileId: currentFileId, webSearch: useWebSearch, imageData: currentImageData })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Request failed');
@@ -153,7 +190,7 @@ form.addEventListener('submit', async event => {
   }
 });
 
-newChat.addEventListener('click', () => { history = []; localStorage.removeItem(STORAGE_KEY); attachedFileId = null; fileChip.hidden = true; renderHistory(); input.focus(); });
+newChat.addEventListener('click', () => { history = []; localStorage.removeItem(STORAGE_KEY); attachedFileId = null; attachedImageData = null; fileChip.hidden = true; imageChip.hidden = true; renderHistory(); input.focus(); });
 language.value = localStorage.getItem(LANGUAGE_KEY) || 'auto';
 language.addEventListener('change', () => localStorage.setItem(LANGUAGE_KEY, language.value));
 webSearch.checked = localStorage.getItem(WEB_SEARCH_KEY) === 'true';
