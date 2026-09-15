@@ -30,21 +30,29 @@ export async function getUsage(userId) {
     [userId, period]
   );
   const row = result.rows[0] || { chats: 0, input_chars: 0, output_chars: 0, period_start: period };
+  const used = { chats: Number(row.chats), inputChars: Number(row.input_chars), outputChars: Number(row.output_chars) };
   return {
     periodStart: new Date(row.period_start).toISOString().slice(0, 10),
-    used: { chats: Number(row.chats), inputChars: Number(row.input_chars), outputChars: Number(row.output_chars) },
+    used,
     limits,
     remaining: {
-      chats: Math.max(0, limits.chats - Number(row.chats)),
-      inputChars: Math.max(0, limits.inputChars - Number(row.input_chars)),
-      outputChars: Math.max(0, limits.outputChars - Number(row.output_chars))
+      chats: Math.max(0, limits.chats - used.chats),
+      inputChars: Math.max(0, limits.inputChars - used.inputChars),
+      outputChars: Math.max(0, limits.outputChars - used.outputChars)
     }
   };
 }
 
 export function usageAllowed(usage, inputChars = 0) {
+  const input = Math.max(0, Number(inputChars) || 0);
   return usage.used.chats < usage.limits.chats &&
-    usage.used.inputChars + inputChars <= usage.limits.inputChars;
+    usage.used.inputChars + input <= usage.limits.inputChars;
+}
+
+export function quotaError(usage) {
+  if (usage.used.chats >= usage.limits.chats) return 'Monthly chat limit reached.';
+  if (usage.used.inputChars >= usage.limits.inputChars) return 'Monthly input usage limit reached.';
+  return 'Monthly usage limit reached.';
 }
 
 export async function recordUsage(userId, inputChars, outputChars) {
