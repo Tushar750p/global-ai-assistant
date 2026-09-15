@@ -22,6 +22,7 @@ const ALLOWED_FILE_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 ]);
+const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 30;
 const requests = new Map();
@@ -30,6 +31,11 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_SIZE, files: 1 },
   fileFilter: (_req, file, cb) => cb(null, ALLOWED_FILE_TYPES.has(file.mimetype))
+});
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE, files: 1 },
+  fileFilter: (_req, file, cb) => cb(null, ALLOWED_IMAGE_TYPES.has(file.mimetype))
 });
 
 app.disable('x-powered-by');
@@ -94,14 +100,23 @@ app.post('/api/files', rateLimit, upload.single('file'), async (req, res) => {
   }
 });
 
+app.post('/api/images', rateLimit, imageUpload.single('image'), async (req, res) => {
+  if (!client) return res.status(503).json({ error: 'AI is not configured yet.' });
+  if (!req.file) return res.status(400).json({ error: 'Please upload a supported image: PNG, JPG, WEBP, or GIF.' });
+
+  const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  res.json({ image: dataUrl, name: req.file.originalname, size: req.file.size, type: req.file.mimetype });
+});
+
 app.post('/api/chat', rateLimit, async (req, res) => {
-  const { message, history = [], fileId = null, webSearch = false } = req.body ?? {};
+  const { message, history = [], fileId = null, webSearch = false, imageData = null } = req.body ?? {};
 
   if (typeof message !== 'string' || !message.trim()) return res.status(400).json({ error: 'Please provide a message.' });
   const cleanMessage = message.trim();
   if (cleanMessage.length > MAX_MESSAGE_LENGTH) return res.status(413).json({ error: `Message is too long. Maximum is ${MAX_MESSAGE_LENGTH} characters.` });
   if (fileId !== null && (typeof fileId !== 'string' || !/^file-[A-Za-z0-9_-]+$/.test(fileId))) return res.status(400).json({ error: 'Invalid file reference.' });
   if (typeof webSearch !== 'boolean') return res.status(400).json({ error: 'Invalid web search setting.' });
+  if (imageData !== null && (typeof imageData !== 'string' || !/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(imageData) || imageData.length > 14 * 1024 * 1024)) return res.status(400).json({ error: 'Invalid or oversized image.' });
   if (!client) return res.status(503).json({ error: 'AI is not configured yet.' });
 
   const safeHistory = Array.isArray(history)
@@ -111,17 +126,16 @@ app.post('/api/chat', rateLimit, async (req, res) => {
     : [];
 
   try {
-    const input = [...safeHistory, {
-      role: 'user',
-      content: [
-        ...(fileId ? [{ type: 'input_file', file_id: fileId }] : []),
-        { type: 'input_text', text: cleanMessage }
-      ]
-    }];
+    const content = [
+      ...(imageData ? [{ type: 'input_image', image_url: imageData, detail: 'auto' }] : []),
+      ...(fileId ? [{ type: 'input_file', file_id: fileId }] : []),
+      { type: 'input_text', text: cleanMessage }
+    ];
+    const input = [...safeHistory, { role: 'user', content }];
 
     const response = await client.responses.create({
       model: process.env.OPENAI_MODEL || 'gpt-5.6-luna',
-      instructions: 'You are Global AI Assistant, a helpful multilingual AI assistant. Reply in the language the user uses unless they ask for another language. If a document is attached, answer from it when relevant and clearly say when the document does not contain enough information. When web search is enabled, use current web information when useful, prefer authoritative sources, and make it clear which claims depend on web sources. Be clear, practical, and honest about uncertainty.',
+      instructions: 'You are Global AI Assistant, a helpful multilingual AI assistant. Reply in the language the user uses unless they ask for another language. If a document or image is attached, analyze it when relevant and clearly distinguish what is visible or supported by the attachment from assumptions. When web search is enabled, use current web information when useful, prefer authoritative sources, and make it clear which claims depend on web sources. Be clear, practical, and honest about uncertainty.',
       input,
       ...(webSearch ? { tools: [{ type: 'web_search' }] } : {})
     });
