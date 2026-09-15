@@ -5,6 +5,10 @@ import { query } from './db.js';
 const scrypt = promisify(crypto.scrypt);
 const SESSION_DAYS = 30;
 const PASSWORD_MIN = 8;
+const PASSWORD_MAX = 128;
+const EMAIL_MAX = 254;
+const SESSION_BYTES = 32;
+const SESSION_COOKIE_NAME = '__Host-session';
 
 export function normalizeEmail(email) {
   return typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -12,9 +16,9 @@ export function normalizeEmail(email) {
 
 export function validateCredentials(email, password) {
   const normalized = normalizeEmail(email);
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return 'Please provide a valid email address.';
+  if (normalized.length > EMAIL_MAX || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return 'Please provide a valid email address.';
   if (typeof password !== 'string' || password.length < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters.`;
-  if (password.length > 128) return 'Password must be 128 characters or fewer.';
+  if (password.length > PASSWORD_MAX) return `Password must be ${PASSWORD_MAX} characters or fewer.`;
   return null;
 }
 
@@ -26,40 +30,46 @@ export async function hashPassword(password) {
 
 export async function verifyPassword(password, encoded) {
   try {
-    const [scheme, n, r, p, saltText, hashText] = String(encoded).split('$');
+    if (typeof password !== 'string' || typeof encoded !== 'string') return false;
+    const [scheme, n, r, p, saltText, hashText] = encoded.split('$');
     if (scheme !== 'scrypt') return false;
     const N = Number(n), R = Number(r), P = Number(p);
     if (N !== 16384 || R !== 8 || P !== 1 || !saltText || !hashText) return false;
+    const salt = Buffer.from(saltText, 'base64url');
     const expected = Buffer.from(hashText, 'base64url');
-    if (expected.length !== 64) return false;
-    const actual = await scrypt(password, Buffer.from(saltText, 'base64url'), expected.length, { N, r: R, p: P });
+    if (salt.length !== 16 || expected.length !== 64) return false;
+    const actual = await scrypt(password, salt, expected.length, { N, r: R, p: P });
     return crypto.timingSafeEqual(Buffer.from(actual), expected);
   } catch { return false; }
 }
 
 export function createSessionToken() {
-  return crypto.randomBytes(32).toString('base64url');
+  return crypto.randomBytes(SESSION_BYTES).toString('base64url');
 }
 
 export function hashSessionToken(token) {
-  return crypto.createHash('sha256').update(token).digest('hex');
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
 export function sessionCookie(token) {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  return `session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${secure}`;
+  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${secure}`;
 }
 
 export function clearSessionCookie() {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  return `session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
 }
 
 export function readSessionToken(req) {
   const header = req.headers.cookie || '';
-  const match = header.split(';').map(part => part.trim()).find(part => part.startsWith('session='));
+  const prefix = `${SESSION_COOKIE_NAME}=`;
+  const match = header.split(';').map(part => part.trim()).find(part => part.startsWith(prefix));
   if (!match) return null;
-  try { return decodeURIComponent(match.slice(8)); } catch { return null; }
+  try {
+    const token = decodeURIComponent(match.slice(prefix.length));
+    return /^[A-Za-z0-9_-]{43}$/.test(token) ? token : null;
+  } catch { return null; }
 }
 
 export async function cleanupExpiredSessions() {
@@ -77,7 +87,7 @@ export async function createSession(userId) {
 export async function getSessionUser(req) {
   const token = readSessionToken(req);
   if (!token) return null;
-  const { rows } = await query(`SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > NOW()`, [hashSessionToken(token)]);
+  const { rows } = await query('SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > NOW()', [hashSessionToken(token)]);
   return rows[0] || null;
 }
 
