@@ -31,6 +31,7 @@ export async function verifyPassword(password, encoded) {
     const N = Number(n), R = Number(r), P = Number(p);
     if (N !== 16384 || R !== 8 || P !== 1 || !saltText || !hashText) return false;
     const expected = Buffer.from(hashText, 'base64url');
+    if (expected.length !== 64) return false;
     const actual = await scrypt(password, Buffer.from(saltText, 'base64url'), expected.length, { N, r: R, p: P });
     return crypto.timingSafeEqual(Buffer.from(actual), expected);
   } catch { return false; }
@@ -57,7 +58,8 @@ export function clearSessionCookie() {
 export function readSessionToken(req) {
   const header = req.headers.cookie || '';
   const match = header.split(';').map(part => part.trim()).find(part => part.startsWith('session='));
-  return match ? decodeURIComponent(match.slice(8)) : null;
+  if (!match) return null;
+  try { return decodeURIComponent(match.slice(8)); } catch { return null; }
 }
 
 export async function createSession(userId) {
