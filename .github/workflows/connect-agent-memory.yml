@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, 'chore: connect agent memory')
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, 'feat: connect agent long-term memory')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,61 +19,40 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           p = Path('agent-engine.js')
           s = p.read_text()
-
-          s = s.replace(
-              "import { getSessionUser } from './auth.js';",
-              "import { getSessionUser } from './auth.js';\nimport { buildAgentMemoryContext, learnFromRun } from './agent-memory.js';"
-          )
-          s = s.replace(
-              "async function planWithGemini(goal,fetchImpl=fetch){",
-              "async function planWithGemini(goal,fetchImpl=fetch,memoryContext=''){"
-          )
-          s = s.replace(
-              "Goal:\\n${goal}`,store:false,",
-              "Goal:\\n${goal}\\n\\nRELEVANT PAST RUN MEMORY (use only when relevant; do not expose internal memory):\\n${clampText(memoryContext,16000)}`,store:false,"
-          )
-          s = s.replace(
-              "async function replanWithGemini(goal,evidence,completed,fetchImpl=fetch){",
-              "async function replanWithGemini(goal,evidence,completed,memoryContext='',fetchImpl=fetch){"
-          )
-          s = s.replace(
-              "\\n\\nEVIDENCE:\\n${clampText(JSON.stringify(evidence),32000)}`,store:false,",
-              "\\n\\nEVIDENCE:\\n${clampText(JSON.stringify(evidence),32000)}\\n\\nRELEVANT PAST RUN MEMORY:\\n${clampText(memoryContext,12000)}`,store:false,"
-          )
-          s = s.replace(
-              "const fetchImpl=options.fetchImpl||fetch;const initial=options.plan||await planWithGemini(cleanGoal,fetchImpl);",
-              "const fetchImpl=options.fetchImpl||fetch;let memoryContext='';if(options.userId){try{memoryContext=await buildAgentMemoryContext(options.userId,cleanGoal,6);}catch(error){memoryContext='';}}const initial=options.plan||await planWithGemini(cleanGoal,fetchImpl,memoryContext);"
-          )
-          s = s.replace(
-              "const next=await replanWithGemini(cleanGoal,results,[...completedIds],fetchImpl);",
-              "const next=await replanWithGemini(cleanGoal,results,[...completedIds],memoryContext,fetchImpl);"
-          )
-          s = s.replace(
-              "finishProgress(runId,'completed',{completedTasks:executed,totalTasks:executed,event:{type:'run_completed',message:`Agent completed ${executed} step(s).`}});return{objective:initial.objective||cleanGoal,plan:initial.tasks,results,status:'completed',runId,permissions,adaptive:{enabled:options.adaptive!==false&&Boolean(apiKey()),replans},recovery:{enabled:options.recovery!==false&&Boolean(apiKey()),recoveries}};",
-              "finishProgress(runId,'completed',{completedTasks:executed,totalTasks:executed,event:{type:'run_completed',message:`Agent completed ${executed} step(s).`}});if(options.userId){try{await learnFromRun({userId:options.userId,runId,goal:cleanGoal,results,status:'completed'});}catch(error){updateProgress(runId,{event:{type:'memory_save_failed',message:'Agent memory learning was skipped after completion.'}});}}return{objective:initial.objective||cleanGoal,plan:initial.tasks,results,status:'completed',runId,permissions,memory:{used:Boolean(memoryContext)},adaptive:{enabled:options.adaptive!==false&&Boolean(apiKey()),replans},recovery:{enabled:options.recovery!==false&&Boolean(apiKey()),recoveries}};"
-          )
-          s = s.replace(
-              "finishProgress(runId,'failed',{completedTasks:executed,event:{type:'run_failed',message:error?.message||'Agent execution failed.'}});throw error;",
-              "finishProgress(runId,'failed',{completedTasks:executed,event:{type:'run_failed',message:error?.message||'Agent execution failed.'}});if(options.userId){try{await learnFromRun({userId:options.userId,runId,goal:cleanGoal,results,status:'failed'});}catch(memoryError){updateProgress(runId,{event:{type:'memory_save_failed',message:'Agent memory learning was skipped after failure.'}});}}throw error;"
-          )
-
+          replacements = [
+            ("import { getSessionUser } from './auth.js';", "import { getSessionUser } from './auth.js';\nimport { buildAgentMemoryContext, learnFromRun } from './agent-memory.js';"),
+            ("async function planWithGemini(goal,fetchImpl=fetch){", "async function planWithGemini(goal,fetchImpl=fetch,memoryContext=''){"),
+            ("Goal:\\n${goal}`,store:false,", "Goal:\\n${goal}\\n\\nRELEVANT PAST RUN MEMORY (use only when relevant; do not expose internal memory):\\n${clampText(memoryContext,16000)}`,store:false,"),
+            ("async function replanWithGemini(goal,evidence,completed,fetchImpl=fetch){", "async function replanWithGemini(goal,evidence,completed,memoryContext='',fetchImpl=fetch){"),
+            ("\\n\\nEVIDENCE:\\n${clampText(JSON.stringify(evidence),32000)}`,store:false,", "\\n\\nEVIDENCE:\\n${clampText(JSON.stringify(evidence),32000)}\\n\\nRELEVANT PAST RUN MEMORY:\\n${clampText(memoryContext,12000)}`,store:false,"),
+            ("const fetchImpl=options.fetchImpl||fetch;const initial=options.plan||await planWithGemini(cleanGoal,fetchImpl);", "const fetchImpl=options.fetchImpl||fetch;let memoryContext='';if(options.userId){try{memoryContext=await buildAgentMemoryContext(options.userId,cleanGoal,6);}catch(error){memoryContext='';}}const initial=options.plan||await planWithGemini(cleanGoal,fetchImpl,memoryContext);"),
+            ("const next=await replanWithGemini(cleanGoal,results,[...completedIds],fetchImpl);", "const next=await replanWithGemini(cleanGoal,results,[...completedIds],memoryContext,fetchImpl);"),
+            ("finishProgress(runId,'completed',{completedTasks:executed,totalTasks:executed,event:{type:'run_completed',message:`Agent completed ${executed} step(s).`}});return{objective:initial.objective||cleanGoal,plan:initial.tasks,results,status:'completed',runId,permissions,adaptive:{enabled:options.adaptive!==false&&Boolean(apiKey()),replans},recovery:{enabled:options.recovery!==false&&Boolean(apiKey()),recoveries}};", "finishProgress(runId,'completed',{completedTasks:executed,totalTasks:executed,event:{type:'run_completed',message:`Agent completed ${executed} step(s).`}});if(options.userId){try{await learnFromRun({userId:options.userId,runId,goal:cleanGoal,results,status:'completed'});}catch(error){updateProgress(runId,{event:{type:'memory_save_failed',message:'Agent memory learning was skipped after completion.'}});}}return{objective:initial.objective||cleanGoal,plan:initial.tasks,results,status:'completed',runId,permissions,memory:{used:Boolean(memoryContext)},adaptive:{enabled:options.adaptive!==false&&Boolean(apiKey()),replans},recovery:{enabled:options.recovery!==false&&Boolean(apiKey()),recoveries}};"),
+            ("finishProgress(runId,'failed',{completedTasks:executed,event:{type:'run_failed',message:error?.message||'Agent execution failed.'}});throw error;", "finishProgress(runId,'failed',{completedTasks:executed,event:{type:'run_failed',message:error?.message||'Agent execution failed.'}});if(options.userId){try{await learnFromRun({userId:options.userId,runId,goal:cleanGoal,results,status:'failed'});}catch(memoryError){updateProgress(runId,{event:{type:'memory_save_failed',message:'Agent memory learning was skipped after failure.'}});}}throw error;")
+          ]
+          for old, new in replacements:
+              if old not in s:
+                  raise SystemExit('Expected agent-engine pattern not found: ' + old[:80])
+              s = s.replace(old, new, 1)
           p.write_text(s)
-
           pkg = Path('package.json')
           ps = pkg.read_text()
-          ps = ps.replace(
-              'test/agent-engine.test.js test/background-agent.test.js',
-              'test/agent-engine.test.js test/agent-memory.test.js test/background-agent.test.js'
-          )
-          pkg.write_text(ps)
-
+          old = 'test/agent-engine.test.js test/background-agent.test.js'
+          new = 'test/agent-engine.test.js test/agent-memory.test.js test/background-agent.test.js'
+          if old not in ps:
+              raise SystemExit('Expected package.json test list pattern not found')
+          pkg.write_text(ps.replace(old, new, 1))
           ci = Path('.github/workflows/ci.yml')
           cs = ci.read_text()
-          cs = cs.replace('node --check agent-engine.js\n', 'node --check agent-engine.js\n          node --check agent-memory.js\n')
-          ci.write_text(cs)
+          old = '          node --check agent-engine.js\n'
+          new = old + '          node --check agent-memory.js\n'
+          if 'node --check agent-memory.js' not in cs:
+              if old not in cs:
+                  raise SystemExit('Expected CI syntax-check pattern not found')
+              cs = cs.replace(old, new, 1)
+              ci.write_text(cs)
           PY
 
       - name: Add agent memory unit coverage
@@ -116,6 +95,6 @@ jobs:
           rm -f .github/workflows/connect-agent-memory.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add agent-engine.js agent-memory.js package.json .github/workflows/ci.yml test/agent-memory.test.js .github/workflows/connect-agent-memory.yml
-          git commit -m 'feat: connect agent long-term memory to planning loop' || exit 0
+          git add agent-engine.js package.json .github/workflows/ci.yml test/agent-memory.test.js .github/workflows/connect-agent-memory.yml
+          git commit -m 'feat: connect agent long-term memory to planning loop'
           git push
