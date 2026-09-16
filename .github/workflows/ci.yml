@@ -55,6 +55,7 @@ jobs:
           node --check auth.js
           node --check agent-engine.js
           node --check background-agent.js
+          node --check tool-execution.js
 
       - name: Run smoke test
         run: npm test
