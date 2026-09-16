@@ -41,6 +41,15 @@ jobs:
         run: |
           node --check server.js
           node --check public/app.js
+          node --check public/usage-ui.js
+          node --check public/billing-ui.js
+          node --check public/research-ui.js
+          node --check public/agent-ui.js
+          node --check public/ui-enhancements.js
+          node --check public/chat-polish.js
+          node --check public/response-experience.js
+          node --check public/premium-ui.js
+          node --check public/advanced-workspace.js
           node --check db.js
           node --check auth.js
           node --check agent-engine.js
