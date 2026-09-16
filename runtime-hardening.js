@@ -43,11 +43,14 @@ express.application.use = function patchedUse(...args) {
     registerBillingRoutes(this);
     this[billingMounted] = true;
   }
+  const result = originalUse.apply(this, args);
+  // Mount after the first app.use() call so express.json() is already ahead
+  // of the research POST endpoint, while keeping research before later routes.
   if (!this[researchMounted]) {
     registerResearchRoutes(this);
     this[researchMounted] = true;
   }
-  return originalUse.apply(this, args);
+  return result;
 };
 
 function findHttpServers() {
