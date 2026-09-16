@@ -10,6 +10,7 @@
     "test": "node --test test/smoke.test.js test/usage.test.js test/plans.test.js test/billing.test.js test/orchestrator.test.js test/semantic-memory.test.js test/deep-research.test.js test/research-verification.test.js test/agent-engine.test.js test/background-agent.test.js test/agent-governance.test.js test/tool-registry.test.js"
   },
   "dependencies": {
+    "@aws-sdk/client-sts": "^3.879.0",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "multer": "^2.0.2",
