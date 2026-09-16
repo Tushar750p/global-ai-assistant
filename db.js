@@ -1,97 +1,23 @@
 import pg from 'pg';
-
 const { Pool } = pg;
 let pool;
-
-export function getPool() {
-  if (!process.env.DATABASE_URL) return null;
-  if (!pool) {
-    pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      max: Number(process.env.DATABASE_POOL_MAX) || 10,
-      idleTimeoutMillis: Number(process.env.DATABASE_IDLE_TIMEOUT_MS) || 30000,
-      connectionTimeoutMillis: Number(process.env.DATABASE_CONNECTION_TIMEOUT_MS) || 5000,
-      maxLifetimeSeconds: Number(process.env.DATABASE_MAX_LIFETIME_SECONDS) || 300,
-      ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false }
-    });
-    pool.on('error', error => console.error('PostgreSQL pool error:', error?.message || error));
-  }
-  return pool;
-}
-
-export async function query(text, params) {
-  const db = getPool();
-  if (!db) throw new Error('DATABASE_URL is not configured.');
-  return db.query(text, params);
-}
-
-export async function closeDb() {
-  if (!pool) return;
-  const currentPool = pool;
-  pool = undefined;
-  await currentPool.end();
-}
-
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-async function initializeSchema(db) {
-  const retries = Math.max(0, Number(process.env.DATABASE_INIT_RETRIES) || 5);
-  const baseDelay = Math.max(100, Number(process.env.DATABASE_INIT_RETRY_DELAY_MS) || 1000);
-
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, plan TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free','pro')), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free';
-        CREATE INDEX IF NOT EXISTS users_plan_idx ON users(plan);
-        CREATE TABLE IF NOT EXISTS sessions (id BIGSERIAL PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
-        CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
-        CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at);
-        CREATE TABLE IF NOT EXISTS conversations (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, title TEXT NOT NULL DEFAULT 'New chat', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
-        CREATE INDEX IF NOT EXISTS conversations_user_updated_idx ON conversations(user_id, updated_at DESC);
-        CREATE TABLE IF NOT EXISTS chat_messages (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, role TEXT NOT NULL CHECK (role IN ('user','assistant')), content TEXT NOT NULL, conversation_id BIGINT REFERENCES conversations(id) ON DELETE CASCADE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
-        ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS conversation_id BIGINT REFERENCES conversations(id) ON DELETE CASCADE;
-        CREATE INDEX IF NOT EXISTS chat_messages_conversation_created_idx ON chat_messages(conversation_id, created_at ASC);
-        CREATE INDEX IF NOT EXISTS chat_messages_user_created_idx ON chat_messages(user_id, created_at DESC);
-        CREATE TABLE IF NOT EXISTS usage_monthly (user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, period_start DATE NOT NULL, chats INTEGER NOT NULL DEFAULT 0 CHECK (chats >= 0), input_chars BIGINT NOT NULL DEFAULT 0 CHECK (input_chars >= 0), output_chars BIGINT NOT NULL DEFAULT 0 CHECK (output_chars >= 0), PRIMARY KEY (user_id, period_start));
-        CREATE INDEX IF NOT EXISTS usage_monthly_period_idx ON usage_monthly(period_start);
-        CREATE TABLE IF NOT EXISTS billing_subscriptions (
-          id BIGSERIAL PRIMARY KEY,
-          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          provider TEXT NOT NULL,
-          customer_id TEXT,
-          subscription_id TEXT NOT NULL,
-          product_id TEXT,
-          price_id TEXT,
-          status TEXT NOT NULL,
-          current_period_start TIMESTAMPTZ,
-          current_period_end TIMESTAMPTZ,
-          cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          UNIQUE(provider, subscription_id)
-        );
-        CREATE INDEX IF NOT EXISTS billing_subscriptions_user_idx ON billing_subscriptions(user_id, updated_at DESC);
-        CREATE INDEX IF NOT EXISTS billing_subscriptions_customer_idx ON billing_subscriptions(provider, customer_id);
-        CREATE TABLE IF NOT EXISTS billing_events (
-          event_id TEXT PRIMARY KEY,
-          event_type TEXT NOT NULL,
-          received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-      `);
-      return;
-    } catch (error) {
-      if (attempt >= retries) throw error;
-      const delay = Math.min(baseDelay * 2 ** attempt, 10000);
-      console.warn(`PostgreSQL schema initialization failed (attempt ${attempt + 1}/${retries + 1}); retrying in ${delay}ms.`);
-      await sleep(delay);
-    }
-  }
-}
-
-export async function initDb() {
-  const db = getPool();
-  if (!db) return false;
-  await initializeSchema(db);
-  return true;
-}
+export function getPool(){if(!process.env.DATABASE_URL)return null;if(!pool){pool=new Pool({connectionString:process.env.DATABASE_URL,max:Number(process.env.DATABASE_POOL_MAX)||10,idleTimeoutMillis:Number(process.env.DATABASE_IDLE_TIMEOUT_MS)||30000,connectionTimeoutMillis:Number(process.env.DATABASE_CONNECTION_TIMEOUT_MS)||5000,maxLifetimeSeconds:Number(process.env.DATABASE_MAX_LIFETIME_SECONDS)||300,ssl:process.env.DATABASE_SSL==='false'?false:{rejectUnauthorized:false}});pool.on('error',error=>console.error('PostgreSQL pool error:',error?.message||error));}return pool;}
+export async function query(text,params){const db=getPool();if(!db)throw new Error('DATABASE_URL is not configured.');return db.query(text,params);}
+export async function closeDb(){if(!pool)return;const currentPool=pool;pool=undefined;await currentPool.end();}
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function initializeSchema(db){const retries=Math.max(0,Number(process.env.DATABASE_INIT_RETRIES)||5),baseDelay=Math.max(100,Number(process.env.DATABASE_INIT_RETRY_DELAY_MS)||1000);for(let attempt=0;;attempt+=1){try{await db.query(`
+CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY,email TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,plan TEXT NOT NULL DEFAULT 'free' CHECK(plan IN ('free','pro')),created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free'; CREATE INDEX IF NOT EXISTS users_plan_idx ON users(plan);
+CREATE TABLE IF NOT EXISTS sessions (id BIGSERIAL PRIMARY KEY,token_hash TEXT NOT NULL UNIQUE,user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires_at TIMESTAMPTZ NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id); CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at);
+CREATE TABLE IF NOT EXISTS conversations (id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,title TEXT NOT NULL DEFAULT 'New chat',created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS conversations_user_updated_idx ON conversations(user_id,updated_at DESC);
+CREATE TABLE IF NOT EXISTS chat_messages (id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('user','assistant')),content TEXT NOT NULL,conversation_id BIGINT REFERENCES conversations(id) ON DELETE CASCADE,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS conversation_id BIGINT REFERENCES conversations(id) ON DELETE CASCADE; CREATE INDEX IF NOT EXISTS chat_messages_conversation_created_idx ON chat_messages(conversation_id,created_at ASC); CREATE INDEX IF NOT EXISTS chat_messages_user_created_idx ON chat_messages(user_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS user_memories (id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,content TEXT NOT NULL,category TEXT NOT NULL DEFAULT 'general',importance REAL NOT NULL DEFAULT 0.6 CHECK(importance>=0 AND importance<=1),created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS user_memories_user_importance_idx ON user_memories(user_id,importance DESC,updated_at DESC); CREATE INDEX IF NOT EXISTS user_memories_user_category_idx ON user_memories(user_id,category);
+CREATE TABLE IF NOT EXISTS usage_monthly (user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,period_start DATE NOT NULL,chats INTEGER NOT NULL DEFAULT 0 CHECK(chats>=0),input_chars BIGINT NOT NULL DEFAULT 0 CHECK(input_chars>=0),output_chars BIGINT NOT NULL DEFAULT 0 CHECK(output_chars>=0),PRIMARY KEY(user_id,period_start)); CREATE INDEX IF NOT EXISTS usage_monthly_period_idx ON usage_monthly(period_start);
+CREATE TABLE IF NOT EXISTS billing_subscriptions (id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,provider TEXT NOT NULL,customer_id TEXT,subscription_id TEXT NOT NULL,product_id TEXT,price_id TEXT,status TEXT NOT NULL,current_period_start TIMESTAMPTZ,current_period_end TIMESTAMPTZ,cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(provider,subscription_id));
+CREATE INDEX IF NOT EXISTS billing_subscriptions_user_idx ON billing_subscriptions(user_id,updated_at DESC); CREATE INDEX IF NOT EXISTS billing_subscriptions_customer_idx ON billing_subscriptions(provider,customer_id);
+CREATE TABLE IF NOT EXISTS billing_events (event_id TEXT PRIMARY KEY,event_type TEXT NOT NULL,received_at TIMESTAMPTZ NOT NULL DEFAULT NOW());`);return;}catch(error){if(attempt>=retries)throw error;const delay=Math.min(baseDelay*2**attempt,10000);console.warn(`PostgreSQL schema initialization failed (attempt ${attempt+1}/${retries+1}); retrying in ${delay}ms.`);await sleep(delay);}}}
+export async function initDb(){const db=getPool();if(!db)return false;await initializeSchema(db);return true;}
