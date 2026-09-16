@@ -1,6 +1,16 @@
 import express from 'express';
+import OpenAI from 'openai';
 import { registerBillingRoutes } from './billing-routes.js';
 import { closeDb } from './db.js';
+import { patchOpenAIResponses, providerStatus } from './orchestrator.js';
+
+// Keep the existing OpenAI client surface while routing chat requests across
+// configured providers. A harmless placeholder lets the server expose chat
+// when only a free provider is configured; file/audio features still require
+// a real OpenAI key until those endpoints are providerized.
+const providers=providerStatus();
+if(!providers.openai&&(providers.gemini||providers.openrouter))process.env.OPENAI_API_KEY='router-placeholder';
+patchOpenAIResponses(OpenAI);
 
 let shuttingDown = false;
 const originalUse = express.application.use;
