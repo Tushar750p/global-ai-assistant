@@ -4,102 +4,30 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta name="theme-color" content="#08090d"/>
-  <title>Global AI</title>
+  <title>Global AI Assistant</title>
   <meta name="description" content="Global AI — a multilingual AI workspace for chat, research, documents and agents."/>
   <link rel="stylesheet" href="/styles.css"/>
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand">
-        <span class="brand-mark">✦</span>
-        <span class="brand-name">Global AI</span>
-      </div>
+      <div class="brand"><span class="brand-mark">✦</span><span class="brand-name">Global AI</span></div>
       <button id="new-chat" class="new-chat" type="button"><span>＋</span> New chat</button>
-      <div class="sidebar-section">
-        <span class="section-label">Conversations</span>
-        <div id="conversation-list"></div>
-        <div class="empty-history">Your chats will appear here</div>
-      </div>
-      <div class="sidebar-footer">
-        <span class="mini-dot"></span>
-        <span id="sidebar-status">Connecting…</span>
-      </div>
+      <div class="sidebar-section"><span class="section-label">Conversations</span><div id="conversation-list"></div><div class="empty-history">Your chats will appear here</div></div>
+      <div class="sidebar-footer"><span class="mini-dot"></span><span id="sidebar-status">Connecting…</span></div>
     </aside>
-
     <main class="app">
-      <header class="header">
-        <div class="topbar-brand">
-          <span class="mobile-mark">✦</span>
-          <div>
-            <div class="eyebrow">GLOBAL AI</div>
-            <div class="topbar-title">AI workspace</div>
-          </div>
-        </div>
-        <div class="header-actions">
-          <label class="language-wrap" for="language">
-            <span>Response language</span>
-            <select id="language" aria-label="Response language">
-              <option value="auto">Auto detect</option><option value="en">English</option><option value="hi">हिन्दी</option><option value="mr">मराठी</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt">Português</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="ar">العربية</option>
-            </select>
-          </label>
-          <span id="status" class="status"><i></i> Checking…</span>
-          <button id="auth-button" class="auth-button" type="button">Login</button>
-        </div>
-      </header>
-
+      <header class="header"><div class="topbar-brand"><span class="mobile-mark">✦</span><div><div class="eyebrow">GLOBAL AI</div><div class="topbar-title">AI workspace</div></div></div><div class="header-actions"><label class="language-wrap" for="language"><span>Response language</span><select id="language" aria-label="Response language"><option value="auto">Auto detect</option><option value="en">English</option><option value="hi">हिन्दी</option><option value="mr">मराठी</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt">Português</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="ar">العربية</option></select></label><span id="status" class="status"><i></i> Checking…</span><button id="auth-button" class="auth-button" type="button">Login</button></div></header>
       <section id="chat" class="chat" aria-live="polite"></section>
-
       <div class="composer-wrap">
         <div id="file-chip" class="file-chip" hidden><span>📎 <b id="file-name"></b></span><button id="remove-file" type="button" aria-label="Remove attached file">×</button></div>
         <div id="image-chip" class="image-chip" hidden><img id="image-preview" alt="Selected image preview"/><span><b id="image-name"></b><small>Image ready</small></span><button id="remove-image" type="button" aria-label="Remove image">×</button></div>
-
-        <form id="chat-form" class="composer">
-          <textarea id="message" rows="1" maxlength="8000" placeholder="Message Global AI…" autocomplete="off" required></textarea>
-          <div class="composer-bottom">
-            <div class="composer-tools">
-              <label class="icon-button attach" title="Upload document" aria-label="Upload document">📎<input id="file-input" type="file" accept=".pdf,.txt,.csv,.docx,.xlsx" hidden/></label>
-              <label class="icon-button attach" title="Analyze an image" aria-label="Analyze an image">▧<input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden/></label>
-              <button id="voice-button" class="icon-button voice-button" type="button" title="Record voice" aria-label="Record voice">🎙</button>
-              <span class="tool-divider"></span>
-              <label class="mode-toggle" title="Allow live web search"><input id="web-search" type="checkbox"/><span>Web</span></label>
-              <button id="deep-research-button" class="mode-button research-toggle" type="button" title="Run autonomous multi-step research">Research</button>
-              <button id="agent-button" class="mode-button research-toggle" type="button" title="Run a controlled autonomous agent">Agent</button>
-              <label class="mode-toggle" title="Read the answer aloud"><input id="speak-answer" type="checkbox"/><span>Voice</span></label>
-            </div>
-            <div class="composer-right">
-              <span id="upload-status">Files up to 10 MB</span>
-              <span id="voice-status">Shift + Enter for a new line</span>
-              <button id="send" class="send-button" type="submit" aria-label="Send message"><span>Send</span><b>↑</b></button>
-            </div>
-          </div>
-        </form>
+        <form id="chat-form" class="composer"><textarea id="message" rows="1" maxlength="8000" placeholder="Message Global AI…" autocomplete="off" required></textarea><div class="composer-bottom"><div class="composer-tools"><label class="icon-button attach" title="Upload document" aria-label="Upload document">📎<input id="file-input" type="file" accept=".pdf,.txt,.csv,.docx,.xlsx" hidden/></label><label class="icon-button attach" title="Analyze an image" aria-label="Analyze an image">▧<input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden/></label><button id="voice-button" class="icon-button voice-button" type="button" title="Record voice" aria-label="Record voice">🎙</button><span class="tool-divider"></span><label class="mode-toggle" title="Allow live web search"><input id="web-search" type="checkbox"/><span>Web</span></label><button id="deep-research-button" class="mode-button research-toggle" type="button" title="Run autonomous multi-step research">Research</button><button id="agent-button" class="mode-button research-toggle" type="button" title="Run a controlled autonomous agent">Agent</button><label class="mode-toggle" title="Read the answer aloud"><input id="speak-answer" type="checkbox"/><span>Voice</span></label></div><div class="composer-right"><span id="upload-status">Files up to 10 MB</span><span id="voice-status">Shift + Enter for a new line</span><button id="send" class="send-button" type="submit" aria-label="Send message"><span>Send</span><b>↑</b></button></div></div></form>
         <p class="note">AI can make mistakes. Check important information. • Deep Research and Agent may take longer.</p>
       </div>
     </main>
   </div>
-
-  <div id="auth-modal" class="auth-modal" hidden>
-    <div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">
-      <button id="auth-close" class="auth-close" type="button" aria-label="Close">×</button>
-      <div class="eyebrow">GLOBAL AI ACCOUNT</div>
-      <h2 id="auth-title">Sign in</h2>
-      <p id="auth-subtitle">Save your conversations securely in the cloud.</p>
-      <form id="auth-form">
-        <label>Email<input id="auth-email" type="email" autocomplete="email" required maxlength="254"/></label>
-        <label>Password<input id="auth-password" type="password" autocomplete="current-password" required minlength="8" maxlength="128"/></label>
-        <div id="auth-error" class="auth-error" role="alert"></div>
-        <button id="auth-submit" type="submit">Sign in</button>
-      </form>
-      <button id="auth-switch" class="auth-switch" type="button">Create an account</button>
-    </div>
-  </div>
-
-  <script src="/app.js"></script>
-  <script src="/usage-ui.js"></script>
-  <script src="/billing-ui.js"></script>
-  <script src="/research-ui.js"></script>
-  <script src="/agent-ui.js"></script>
-  <script src="/ui-enhancements.js"></script>
+  <div id="auth-modal" class="auth-modal" hidden><div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title"><button id="auth-close" class="auth-close" type="button" aria-label="Close">×</button><div class="eyebrow">GLOBAL AI ACCOUNT</div><h2 id="auth-title">Sign in</h2><p id="auth-subtitle">Save your conversations securely in the cloud.</p><form id="auth-form"><label>Email<input id="auth-email" type="email" autocomplete="email" required maxlength="254"/></label><label>Password<input id="auth-password" type="password" autocomplete="current-password" required minlength="8" maxlength="128"/></label><div id="auth-error" class="auth-error" role="alert"></div><button id="auth-submit" type="submit">Sign in</button></form><button id="auth-switch" class="auth-switch" type="button">Create an account</button></div></div>
+  <script src="/app.js"></script><script src="/usage-ui.js"></script><script src="/billing-ui.js"></script><script src="/research-ui.js"></script><script src="/agent-ui.js"></script><script src="/ui-enhancements.js"></script>
 </body>
 </html>
