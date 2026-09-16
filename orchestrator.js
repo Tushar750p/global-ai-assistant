@@ -1,72 +1,14 @@
 const DEFAULT_GEMINI_MODEL='gemini-2.5-flash';
 const DEFAULT_OPENROUTER_MODEL='openrouter/free';
 const SYSTEM_INSTRUCTION='You are Global AI Assistant, a helpful multilingual AI assistant. Reply in the language the user uses unless they ask for another language. Be clear, practical, and honest about uncertainty.';
-
 function has(value){return typeof value==='string'&&value.trim().length>0;}
-function inputText(content){if(typeof content==='string')return content;return Array.isArray(content)?content.filter(x=>x?.type==='input_text'&&typeof x.text==='string').map(x=>x.text).join('\n'):'';}
 function inputParts(content){if(typeof content==='string')return [{text:content}];if(!Array.isArray(content))return [];return content.flatMap(x=>{if(x?.type==='input_text'&&typeof x.text==='string')return [{text:x.text}];if(x?.type==='input_image'&&typeof x.image_url==='string'){const m=x.image_url.match(/^data:([^;]+);base64,(.+)$/);return m?[{inline_data:{mime_type:m[1],data:m[2]}}]:[{text:'[Image input]'}];}return [];});}
 function normalizeInput(input){return Array.isArray(input)?input.filter(x=>x&&typeof x==='object'&&['user','assistant','system'].includes(x.role)):[];}
-
 function toOpenRouterMessages(input){return normalizeInput(input).map(m=>({role:m.role==='system'?'system':m.role==='assistant'?'assistant':'user',content:Array.isArray(m.content)?m.content.flatMap(x=>{if(x?.type==='input_text')return [{type:'text',text:x.text}];if(x?.type==='input_image'&&typeof x.image_url==='string')return [{type:'image_url',image_url:{url:x.image_url}}];return [];}) : m.content}));}
-
-async function callOpenRouter(request, fetchImpl){
-  const key=process.env.OPENROUTER_API_KEY;if(!has(key))throw new Error('OpenRouter is not configured.');
-  const body={model:process.env.OPENROUTER_MODEL||DEFAULT_OPENROUTER_MODEL,messages:[{role:'system',content:request.instructions||SYSTEM_INSTRUCTION},...toOpenRouterMessages(request.input)],max_tokens:Number(process.env.OPENROUTER_MAX_TOKENS)||4096};
-  const r=await fetchImpl('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`,'HTTP-Referer':process.env.APP_URL||'https://global-ai-assistant.onrender.com','X-Title':'Global AI Assistant'},body:JSON.stringify(body)});
-  if(!r.ok)throw new Error(`OpenRouter ${r.status}: ${await r.text()}`);
-  const data=await r.json();const text=data?.choices?.[0]?.message?.content;
-  if(!text)throw new Error('OpenRouter returned no text.');
-  return {output_text:typeof text==='string'?text:JSON.stringify(text),output:[],provider:'openrouter',model:body.model};
-}
-
-async function callGemini(request, fetchImpl){
-  const key=process.env.GEMINI_API_KEY||process.env.GOOGLE_API_KEY;if(!has(key))throw new Error('Gemini is not configured.');
-  const contents=normalizeInput(request.input).filter(m=>m.role!=='system').map(m=>({role:m.role==='assistant'?'model':'user',parts:inputParts(m.content)}));
-  const body={system_instruction:{parts:[{text:request.instructions||SYSTEM_INSTRUCTION}]},contents,generationConfig:{maxOutputTokens:Number(process.env.GEMINI_MAX_OUTPUT_TOKENS)||4096}};
-  const model=process.env.GEMINI_MODEL||DEFAULT_GEMINI_MODEL;
-  const r=await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok)throw new Error(`Gemini ${r.status}: ${await r.text()}`);
-  const data=await r.json();const text=data?.candidates?.[0]?.content?.parts?.map(p=>p.text).filter(Boolean).join('');
-  if(!text)throw new Error('Gemini returned no text.');
-  return {output_text:text,output:[],provider:'gemini',model};
-}
-
-function isOpenAIUsable(request){
-  if(Array.isArray(request.tools)&&request.tools.length)return true;
-  const input=JSON.stringify(request.input||'');
-  return input.includes('input_file');
-}
-
+async function callOpenRouter(request,fetchImpl){const key=process.env.OPENROUTER_API_KEY;if(!has(key))throw new Error('OpenRouter is not configured.');const body={model:process.env.OPENROUTER_MODEL||DEFAULT_OPENROUTER_MODEL,messages:[{role:'system',content:request.instructions||SYSTEM_INSTRUCTION},...toOpenRouterMessages(request.input)],max_tokens:Number(process.env.OPENROUTER_MAX_TOKENS)||4096};const r=await fetchImpl('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`,'HTTP-Referer':process.env.APP_URL||'https://global-ai-assistant.onrender.com','X-Title':'Global AI Assistant'},body:JSON.stringify(body)});if(!r.ok)throw new Error(`OpenRouter ${r.status}: ${await r.text()}`);const data=await r.json();const text=data?.choices?.[0]?.message?.content;if(!text)throw new Error('OpenRouter returned no text.');return {output_text:typeof text==='string'?text:JSON.stringify(text),output:[],provider:'openrouter',model:body.model};}
+async function callGemini(request,fetchImpl){const key=process.env.GEMINI_API_KEY||process.env.GOOGLE_API_KEY;if(!has(key))throw new Error('Gemini is not configured.');const contents=normalizeInput(request.input).filter(m=>m.role!=='system').map(m=>({role:m.role==='assistant'?'model':'user',parts:inputParts(m.content)}));const body={system_instruction:{parts:[{text:request.instructions||SYSTEM_INSTRUCTION}]},contents,generationConfig:{maxOutputTokens:Number(process.env.GEMINI_MAX_OUTPUT_TOKENS)||4096}};const model=process.env.GEMINI_MODEL||DEFAULT_GEMINI_MODEL;const r=await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error(`Gemini ${r.status}: ${await r.text()}`);const data=await r.json();const text=data?.candidates?.[0]?.content?.parts?.map(p=>p.text).filter(Boolean).join('');if(!text)throw new Error('Gemini returned no text.');return {output_text:text,output:[],provider:'gemini',model};}
+function isOpenAIUsable(request){if(Array.isArray(request.tools)&&request.tools.length)return true;return JSON.stringify(request.input||'').includes('input_file');}
 export function providerStatus(){return {openai:has(process.env.OPENAI_API_KEY),gemini:has(process.env.GEMINI_API_KEY||process.env.GOOGLE_API_KEY),openrouter:has(process.env.OPENROUTER_API_KEY)};}
-
-export async function routeResponses(originalCreate, request, fetchImpl=fetch){
-  const configured=providerStatus();
-  const mode=(process.env.AI_PROVIDER||'auto').toLowerCase();
-  const attempts=[];
-  if(mode==='openai')attempts.push('openai');
-  else if(mode==='gemini')attempts.push('gemini');
-  else if(mode==='openrouter')attempts.push('openrouter');
-  else if(isOpenAIUsable(request))attempts.push('openai','gemini','openrouter');
-  else attempts.push('openrouter','gemini','openai');
-  let lastError=null;
-  for(const provider of [...new Set(attempts)]){
-    if(provider==='openai'&&!configured.openai)continue;
-    try{
-      const result=provider==='openai'?await originalCreate(request):provider==='gemini'?await callGemini(request,fetchImpl):await callOpenRouter(request,fetchImpl);
-      return result;
-    }catch(error){lastError=error;console.error(`${provider} provider failed:`,error?.message||error);}
-  }
-  throw lastError||new Error('No AI provider is configured. Add GEMINI_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY.');
-}
-
-export function patchOpenAIResponses(OpenAIClass){
-  const proto=OpenAIClass?.prototype;if(!proto?.responses?.create)return false;
-  if(proto.responses.create.__globalAiRouter)return true;
-  const original=proto.responses.create;
-  const wrapped=async function(request){return routeResponses(original.bind(this),request);};
-  Object.defineProperty(wrapped,'__globalAiRouter',{value:true});
-  proto.responses.create=wrapped;
-  return true;
-}
-
+export async function routeResponses(originalCreate,request,fetchImpl=fetch){const configured=providerStatus();const mode=(process.env.AI_PROVIDER||'auto').toLowerCase();const attempts=[];if(mode==='openai')attempts.push('openai');else if(mode==='gemini')attempts.push('gemini');else if(mode==='openrouter')attempts.push('openrouter');else if(isOpenAIUsable(request))attempts.push('openai','gemini','openrouter');else attempts.push('openrouter','gemini','openai');let lastError=null;for(const provider of [...new Set(attempts)]){if(provider==='openai'&&!configured.openai)continue;try{return provider==='openai'?await originalCreate(request):provider==='gemini'?await callGemini(request,fetchImpl):await callOpenRouter(request,fetchImpl);}catch(error){lastError=error;console.error(`${provider} provider failed:`,error?.message||error);}}throw lastError||new Error('No AI provider is configured. Add GEMINI_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY.');}
+export function patchOpenAIResponses(ResponsesClass){const proto=ResponsesClass?.prototype;if(!proto?.create)return false;if(proto.create.__globalAiRouter)return true;const original=proto.create;const wrapped=async function(request,options){return routeResponses(original.bind(this),request);};Object.defineProperty(wrapped,'__globalAiRouter',{value:true});proto.create=wrapped;return true;}
 export const _test={callGemini,callOpenRouter,toOpenRouterMessages,inputParts,providerStatus};
