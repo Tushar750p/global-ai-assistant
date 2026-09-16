@@ -4,9 +4,8 @@ import { getSessionUser } from './auth.js';
 const MAX_APPROVAL_GOAL_LENGTH = 12000;
 const approvalWindows = new Map();
 
-function has(value) { return typeof value === 'string' && value.trim().length > 0; }
 function keyFor(req) { return req.ip || req.socket?.remoteAddress || 'unknown'; }
-function riskForGoal(goal) {
+export function riskForGoal(goal) {
   const text = String(goal || '').toLowerCase();
   const high = /delete|destroy|drop database|terminate|shutdown|restart production|deploy production|publish|send email|send message|transfer money|purchase|buy|change password|rotate secret|revoke|grant access|modify aws|modify cloud|terraform apply|kubectl delete|git push|merge pull request/.test(text);
   const medium = /create|update|edit|deploy|install|configure|run command|execute|upload|download|github|aws|cloud|database|server|infrastructure/.test(text);
@@ -69,10 +68,8 @@ export function registerAgentGovernanceRoutes(app, startAgent) {
   app.post('/api/agent/approval', async (req,res) => {
     if (!allowApprovalRequest(keyFor(req))) return res.status(429).json({ error: 'Approval request rate limit reached.' });
     const user = getPool() ? await getSessionUser(req).catch(() => null) : null;
-    try {
-      const approval = await createApproval(user?.id || null, req.body?.goal);
-      res.status(201).json(approval);
-    } catch (e) { res.status(400).json({ error: e?.message || 'Approval request failed.' }); }
+    try { const approval = await createApproval(user?.id || null, req.body?.goal); res.status(201).json(approval); }
+    catch (e) { res.status(400).json({ error: e?.message || 'Approval request failed.' }); }
   });
   app.post('/api/agent/approval/:id/decision', async (req,res) => {
     const user = getPool() ? await getSessionUser(req).catch(() => null) : null;
@@ -83,10 +80,8 @@ export function registerAgentGovernanceRoutes(app, startAgent) {
     if (!decision) return res.status(400).json({ error: 'Decision must be approved or rejected.' });
     if (getPool()) await query('UPDATE agent_approvals SET status=$1,decided_at=NOW() WHERE id=$2', [decision, approval.id]);
     if (decision === 'rejected') return res.json({ id: approval.id, status: 'rejected' });
-    try {
-      const started = await startAgent(approval.goal, user?.id || null, { permissions: approval.permissions, approvalId: approval.id });
-      res.json({ id: approval.id, status: 'approved', agent: started });
-    } catch (e) { res.status(400).json({ error: e?.message || 'Approved agent failed to start.' }); }
+    try { const started = await startAgent(approval.goal, user?.id || null, { permissions: approval.permissions, approvalId: approval.id }); res.json({ id: approval.id, status: 'approved', agent: started }); }
+    catch (e) { res.status(400).json({ error: e?.message || 'Approved agent failed to start.' }); }
   });
 }
 export const _test = { riskForGoal, requiresApproval, permissionsForRisk, allowApprovalRequest, MAX_APPROVAL_GOAL_LENGTH };
