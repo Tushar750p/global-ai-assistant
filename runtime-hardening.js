@@ -1,6 +1,7 @@
 import express from 'express';
 import { Responses } from 'openai/resources/responses/responses';
 import { registerBillingRoutes } from './billing-routes.js';
+import { registerResearchRoutes } from './deep-research.js';
 import { closeDb } from './db.js';
 import { getSessionUser } from './auth.js';
 import { patchOpenAIResponses, providerStatus } from './orchestrator.js';
@@ -36,10 +37,15 @@ express.application.post = function patchedPost(path, ...handlers) {
 let shuttingDown = false;
 const originalUse = express.application.use;
 const billingMounted = Symbol.for('global-ai-assistant.billing-bootstrap');
+const researchMounted = Symbol.for('global-ai-assistant.research-bootstrap');
 express.application.use = function patchedUse(...args) {
   if (!this[billingMounted]) {
     registerBillingRoutes(this);
     this[billingMounted] = true;
+  }
+  if (!this[researchMounted]) {
+    registerResearchRoutes(this);
+    this[researchMounted] = true;
   }
   return originalUse.apply(this, args);
 };
