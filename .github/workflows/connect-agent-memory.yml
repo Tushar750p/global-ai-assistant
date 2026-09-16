@@ -10,13 +10,16 @@ permissions:
 
 jobs:
   patch:
-    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, 'feat: connect agent long-term memory')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Patch agent memory integration
         shell: bash
         run: |
+          if [[ "${GITHUB_SHA}" != "6b4dc587b59877b83b42d225fb429ce48c888355" && "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            echo "Unexpected push; integration workflow is intended for the current patch commit."
+            exit 0
+          fi
           python3 - <<'PY'
           from pathlib import Path
           p = Path('agent-engine.js')
@@ -46,15 +49,13 @@ jobs:
           pkg.write_text(ps.replace(old, new, 1))
           ci = Path('.github/workflows/ci.yml')
           cs = ci.read_text()
-          old = '          node --check agent-engine.js\n'
-          new = old + '          node --check agent-memory.js\n'
           if 'node --check agent-memory.js' not in cs:
+              old = '          node --check agent-engine.js\n'
               if old not in cs:
                   raise SystemExit('Expected CI syntax-check pattern not found')
-              cs = cs.replace(old, new, 1)
+              cs = cs.replace(old, old + '          node --check agent-memory.js\n', 1)
               ci.write_text(cs)
           PY
-
       - name: Add agent memory unit coverage
         shell: bash
         run: |
@@ -62,25 +63,19 @@ jobs:
           import test from 'node:test';
           import assert from 'node:assert/strict';
           import { _test, buildAgentMemoryContext, learnFromRun } from '../agent-memory.js';
-
           test('agent memory enforces context and lesson limits', () => {
             assert.equal(_test.MAX_GOAL, 12000);
             assert.equal(_test.MAX_CONTEXT, 24000);
             assert.equal(_test.MAX_LESSONS, 12);
             assert.equal(_test.clean('  hello  ', 5), 'hello');
           });
-
           test('agent memory retrieval is safe when persistence is unavailable', async () => {
-            const context = await buildAgentMemoryContext(null, 'deploy the application');
-            assert.equal(context, '');
+            assert.equal(await buildAgentMemoryContext(null, 'deploy the application'), '');
           });
-
           test('agent learning is a no-op without a user database context', async () => {
-            const saved = await learnFromRun({ userId: null, runId: 'test-run', goal: 'test', results: {}, status: 'completed' });
-            assert.equal(saved, null);
+            assert.equal(await learnFromRun({ userId:null, runId:'test-run', goal:'test', results:{}, status:'completed' }), null);
           });
           EOF
-
       - name: Verify patch
         run: |
           node --check agent-engine.js
@@ -88,7 +83,6 @@ jobs:
           node --check test/agent-memory.test.js
           npm install
           npm test
-
       - name: Commit integration and remove patch workflow
         shell: bash
         run: |
