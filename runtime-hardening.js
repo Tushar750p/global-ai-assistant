@@ -3,6 +3,7 @@ import { Responses } from 'openai/resources/responses/responses';
 import { registerBillingRoutes } from './billing-routes.js';
 import { registerResearchRoutes } from './deep-research.js';
 import { registerVerificationRoutes } from './research-verification.js';
+import { registerAgentRoutes } from './agent-engine.js';
 import { closeDb } from './db.js';
 import { getSessionUser } from './auth.js';
 import { patchOpenAIResponses, providerStatus } from './orchestrator.js';
@@ -29,11 +30,13 @@ const originalUse = express.application.use;
 const billingMounted = Symbol.for('global-ai-assistant.billing-bootstrap');
 const researchMounted = Symbol.for('global-ai-assistant.research-bootstrap');
 const verificationMounted = Symbol.for('global-ai-assistant.verification-bootstrap');
+const agentMounted = Symbol.for('global-ai-assistant.agent-bootstrap');
 express.application.use = function patchedUse(...args) {
   if (!this[billingMounted]) { registerBillingRoutes(this); this[billingMounted] = true; }
   const result = originalUse.apply(this, args);
   if (!this[researchMounted]) { registerResearchRoutes(this); this[researchMounted] = true; }
   if (!this[verificationMounted]) { registerVerificationRoutes(this); this[verificationMounted] = true; }
+  if (!this[agentMounted]) { registerAgentRoutes(this); this[agentMounted] = true; }
   return result;
 };
 
