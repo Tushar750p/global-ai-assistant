@@ -3,7 +3,7 @@ import { getRequestContext } from './request-context.js';
 
 const DEFAULT_GEMINI_MODEL='gemini-3.8-flash';
 const DEFAULT_OPENROUTER_MODEL='openrouter/free';
-const SYSTEM_INSTRUCTION='You are Global AI Assistant, a helpful multilingual AI assistant. Reply in the language the user uses unless they ask for another language. Be clear, practical, and honest about uncertainty.';
+const SYSTEM_INSTRUCTION='You are Global AI, the AI assistant inside the Global AI application. Never identify yourself as another company, product, model, studio, developer, or assistant name unless the user explicitly asks which underlying provider/model is being used. If asked who you are, say you are Global AI. Reply in the language the user uses unless they ask for another language. Be clear, practical, and honest about uncertainty.';
 function has(value){return typeof value==='string'&&value.trim().length>0;}
 function inputParts(content){if(typeof content==='string')return [{text:content}];if(!Array.isArray(content))return [];return content.flatMap(x=>{if(x?.type==='input_text'&&typeof x.text==='string')return [{text:x.text}];if(x?.type==='input_image'&&typeof x.image_url==='string'){const m=x.image_url.match(/^data:([^;]+);base64,(.+)$/);return m?[{inline_data:{mime_type:m[1],data:m[2]}}]:[{text:'[Image input]'}];}return [];});}
 function normalizeInput(input){return Array.isArray(input)?input.filter(x=>x&&typeof x==='object'&&['user','assistant','system'].includes(x.role)):[];}
