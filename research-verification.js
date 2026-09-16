@@ -1,0 +1,147 @@
+import { getPool, query } from './db.js';
+import { getSessionUser } from './auth.js';
+
+const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+const DEFAULT_MODEL = process.env.GEMINI_VERIFICATION_MODEL || 'gemini-3.8-flash';
+const MAX_REPORT_LENGTH = 50000;
+const MAX_CLAIMS = 24;
+const MAX_VERIFICATIONS_PER_IP_PER_HOUR = 6;
+const ipWindows = new Map();
+let tableReady = false;
+
+function has(value) { return typeof value === 'string' && value.trim().length > 0; }
+function keyFor(req) { return req.ip || req.socket?.remoteAddress || 'unknown'; }
+function allowIp(key) {
+  const now = Date.now(); const e = ipWindows.get(key);
+  if (!e || now - e.start >= 60 * 60 * 1000) { ipWindows.set(key, { start: now, count: 1 }); return true; }
+  if (e.count >= MAX_VERIFICATIONS_PER_IP_PER_HOUR) return false;
+  e.count += 1; return true;
+}
+function apiKey() { return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || ''; }
+function outputText(data) {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text.trim();
+  const texts = [];
+  for (const step of data?.steps || []) for (const item of step?.content || []) if (item?.type === 'text' && typeof item.text === 'string') texts.push(item.text);
+  return texts.join('\n').trim();
+}
+function parseJson(text) {
+  const clean = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  try { return JSON.parse(clean); } catch { return null; }
+}
+function citationsFromSteps(steps = []) {
+  const out = [];
+  for (const step of steps) for (const item of step?.content || []) for (const a of item?.annotations || []) {
+    const url = a?.url || a?.uri;
+    if (url && !out.some(x => x.url === url)) out.push({ title: a.title || url, url });
+  }
+  return out.slice(0, 80);
+}
+async function geminiStructured(input, schema, tools = []) {
+  const key = apiKey();
+  if (!key) throw new Error('Gemini verification requires GEMINI_API_KEY or GOOGLE_API_KEY.');
+  const body = { model: DEFAULT_MODEL, input, tools, response_format: { type: 'text', mime_type: 'application/json', schema } };
+  const r = await fetch(API_BASE, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.error?.message || `Gemini verification failed (${r.status}).`);
+  const parsed = parseJson(outputText(data));
+  if (!parsed) throw new Error('Gemini verification returned invalid structured output.');
+  return { data: parsed, citations: citationsFromSteps(data.steps) };
+}
+async function ensureTable() {
+  if (tableReady || !getPool()) return;
+  await query(`CREATE TABLE IF NOT EXISTS research_verifications (
+    id TEXT PRIMARY KEY,
+    research_job_id TEXT NOT NULL REFERENCES research_jobs(id) ON DELETE CASCADE,
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    status TEXT NOT NULL CHECK (status IN ('completed','failed')),
+    result JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+  )`);
+  tableReady = true;
+}
+async function saveVerification(jobId, userId, result) {
+  if (!getPool()) return;
+  await ensureTable();
+  await query(`INSERT INTO research_verifications (id,research_job_id,user_id,status,result,created_at,completed_at)
+    VALUES($1,$2,$3,'completed',$4,NOW(),NOW())`, [`verification_${Date.now()}_${Math.random().toString(36).slice(2,9)}`, jobId, userId || null, JSON.stringify(result)]);
+}
+const claimSchema = {
+  type: 'object', additionalProperties: false,
+  properties: { claims: { type: 'array', minItems: 1, maxItems: MAX_CLAIMS, items: {
+    type: 'object', additionalProperties: false,
+    properties: { id: { type: 'string' }, claim: { type: 'string' }, importance: { type: 'string', enum: ['high','medium','low'] } },
+    required: ['id','claim','importance']
+  } } }, required: ['claims']
+};
+const verificationSchema = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    verdict: { type: 'string', enum: ['supported','partially_supported','contradicted','unverified'] },
+    confidence: { type: 'number', minimum: 0, maximum: 1 },
+    evidence_summary: { type: 'string' },
+    source_urls: { type: 'array', maxItems: 8, items: { type: 'string' } }
+  },
+  required: ['verdict','confidence','evidence_summary','source_urls']
+};
+async function extractClaims(report) {
+  const r = await geminiStructured(`Extract the most important externally checkable factual claims from this research report. Exclude opinions, recommendations, rhetorical statements, and claims that cannot reasonably be checked. Keep each claim atomic and concise. Return no more than ${MAX_CLAIMS} claims.\n\nREPORT:\n${report}`, claimSchema);
+  return Array.isArray(r.data.claims) ? r.data.claims.slice(0, MAX_CLAIMS) : [];
+}
+async function verifyClaim(claim, report, citations) {
+  const sourceList = citations.map(x => `${x.title}: ${x.url}`).join('\n');
+  const prompt = `Independently verify the factual claim below. Use Google Search to find authoritative, recent, or primary sources where appropriate. Do not assume the original research report is correct. Compare evidence, note date/context limitations, and classify the claim.\n\nCLAIM:\n${claim.claim}\n\nORIGINAL REPORT:\n${report.slice(0, 30000)}\n\nORIGINAL CITATIONS (use only as leads, not as proof):\n${sourceList || '(none)'}`;
+  return geminiStructured(prompt, verificationSchema, [{ type: 'google_search' }]);
+}
+async function independentCouncilCheck(claims, report) {
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!has(key) || !claims.length) return null;
+  try {
+    const prompt = `Act as an independent fact-checking critic. Review these extracted claims from a research report. Do not assume they are true. For each claim, identify what would need evidence and flag wording that is too strong, ambiguous, time-sensitive, or unsupported. Return concise findings.\n\nCLAIMS:\n${JSON.stringify(claims)}\n\nREPORT:\n${report.slice(0, 30000)}`;
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, 'HTTP-Referer': process.env.APP_URL || 'https://global-ai-assistant.onrender.com', 'X-Title': 'Global AI Assistant' }, body: JSON.stringify({ model: process.env.OPENROUTER_MODEL || 'openrouter/free', messages: [{ role: 'user', content: prompt }], max_tokens: 3000 }) });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return typeof data?.choices?.[0]?.message?.content === 'string' ? data.choices[0].message.content : null;
+  } catch { return null; }
+}
+export async function verifyResearchJob(jobId, userId = null) {
+  if (!getPool()) throw new Error('Research verification requires the database-backed research job.');
+  await ensureTable();
+  const r = await query('SELECT id,user_id,report,citations,status FROM research_jobs WHERE id=$1', [jobId]);
+  const job = r.rows[0];
+  if (!job) throw new Error('Research job not found.');
+  if (job.user_id && (!userId || Number(userId) !== Number(job.user_id))) throw new Error('Research job not found.');
+  if (job.status !== 'completed' || !job.report) throw new Error('Research must be completed before verification.');
+  if (job.report.length > MAX_REPORT_LENGTH) throw new Error('Research report is too large to verify.');
+  const claims = await extractClaims(job.report);
+  const results = [];
+  for (const claim of claims) {
+    try {
+      const checked = await verifyClaim(claim, job.report, Array.isArray(job.citations) ? job.citations : []);
+      results.push({ ...claim, verification: checked.data, citations: checked.citations });
+    } catch (e) {
+      results.push({ ...claim, verification: { verdict: 'unverified', confidence: 0, evidence_summary: e?.message || 'Verification failed.', source_urls: [] }, citations: [] });
+    }
+  }
+  const independentCritic = await independentCouncilCheck(results, job.report);
+  const counts = results.reduce((a, x) => { a[x.verification.verdict] = (a[x.verification.verdict] || 0) + 1; return a; }, {});
+  const result = { jobId, claimsChecked: results.length, counts, claims: results, independentCritic, generatedAt: new Date().toISOString() };
+  await saveVerification(jobId, job.user_id, result);
+  return result;
+}
+export function registerVerificationRoutes(app) {
+  app.post('/api/research/:id/verify', async (req, res) => {
+    const id = String(req.params.id || '');
+    if (!/^research_[A-Za-z0-9_]+$/.test(id)) return res.status(400).json({ error: 'Invalid research job.' });
+    if (!allowIp(keyFor(req))) return res.status(429).json({ error: 'Verification rate limit reached. Please try again later.' });
+    const user = getPool() ? await getSessionUser(req).catch(() => null) : null;
+    try {
+      const result = await verifyResearchJob(id, user?.id || null);
+      res.json(result);
+    } catch (e) {
+      const status = /not found/i.test(e?.message || '') ? 404 : /completed before/i.test(e?.message || '') ? 409 : 400;
+      res.status(status).json({ error: e?.message || 'Research verification failed.' });
+    }
+  });
+}
+export const _test = { allowIp, parseJson, outputText, MAX_REPORT_LENGTH, MAX_CLAIMS };
