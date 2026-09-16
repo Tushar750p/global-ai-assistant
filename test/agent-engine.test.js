@@ -16,7 +16,7 @@ test('heuristic planner creates research verification and synthesis flow', () =>
 
 test('heuristic planner selects GitHub tools for repository debugging', () => {
   const plan = heuristicPlan('Inspect my GitHub repository and find the deployment bug in the code.');
-  assert.deepEqual(plan.tasks.map(t => t.tool), ['github_repo', 'github_file', 'synthesize']);
+  assert.deepEqual(plan.tasks.map(t => t.tool), ['github_repo', 'github_file', 'github_issues', 'synthesize']);
   validatePlan(plan);
 });
 
