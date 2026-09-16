@@ -1,4 +1,5 @@
 import { query } from './db.js';
+import { saveMemory } from './memory.js';
 
 const DEFAULT_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
 const DEFAULT_DIMENSIONS = Math.min(3072, Math.max(768, Number(process.env.GEMINI_EMBEDDING_DIMENSIONS) || 768));
@@ -85,6 +86,23 @@ export async function indexMemory(memory) {
   return { ...memory, embeddingIndexed: true };
 }
 
+export async function indexUnindexedMemories(userId, limit = 20) {
+  if (!validUserId(userId)) return 0;
+  await ensureSemanticMemorySchema();
+  const result = await query(`
+    SELECT m.id,m.user_id,m.content,m.category,m.importance,m.created_at,m.updated_at
+    FROM user_memories m
+    LEFT JOIN user_memory_embeddings e ON e.memory_id=m.id
+    WHERE m.user_id=$1 AND e.memory_id IS NULL
+    ORDER BY m.updated_at DESC LIMIT $2
+  `, [userId, Math.min(50, Math.max(1, Number(limit) || 20))]);
+  let count = 0;
+  for (const memory of result.rows) {
+    try { await indexMemory(memory); count += 1; } catch (error) { console.warn('Memory indexing failed:', error?.message || error); }
+  }
+  return count;
+}
+
 export async function semanticSearchMemories(userId, queryText, limit = DEFAULT_LIMIT, minScore = 0.45) {
   if (!validUserId(userId)) throw new Error('Invalid user id.');
   const text = clean(queryText);
@@ -107,6 +125,7 @@ export async function semanticSearchMemories(userId, queryText, limit = DEFAULT_
 
 export async function buildSemanticMemoryContext(userId, queryText, limit = DEFAULT_LIMIT) {
   try {
+    await indexUnindexedMemories(userId);
     const memories = await semanticSearchMemories(userId, queryText, limit);
     if (!memories.length) return '';
     return memories.map((m, i) => `[Semantic Memory ${i + 1} | ${m.category} | similarity ${Number(m.score).toFixed(3)} | importance ${Number(m.importance).toFixed(2)}] ${m.content}`).join('\n');
@@ -116,4 +135,51 @@ export async function buildSemanticMemoryContext(userId, queryText, limit = DEFA
   }
 }
 
-export const _test = { clean, validUserId, cosineSimilarity };
+function parseMemoryCandidates(text) {
+  if (typeof text !== 'string') return [];
+  const cleaned = text.replace(/```json|```/g, '').trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    const items = Array.isArray(parsed) ? parsed : parsed?.memories;
+    if (!Array.isArray(items)) return [];
+    return items.map(item => ({ content: clean(item?.content), category: clean(item?.category || 'general', 64), importance: Number(item?.importance ?? 0.6) }))
+      .filter(item => item.content && item.importance >= 0.6)
+      .slice(0, 5);
+  } catch { return []; }
+}
+
+export async function extractAndSaveMemories(userId, text) {
+  if (!validUserId(userId) || !clean(text)) return 0;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!apiKey) return 0;
+  try {
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+        store: false,
+        system_instruction: 'Extract only stable, useful user preferences, goals, recurring projects, or explicit long-term facts. Never infer sensitive traits. Ignore transient requests and ordinary conversation. Return JSON only: {"memories":[{"content":"...","category":"...","importance":0.0}]} and return an empty list when nothing should be remembered.',
+        input: `User message:\n${clean(text)}`,
+      }),
+    });
+    if (!response.ok) return 0;
+    const data = await response.json();
+    const raw = data?.output_text || data?.steps?.filter(s => s.type === 'model_output').flatMap(s => s.content || []).map(x => x.text).filter(Boolean).join('');
+    const candidates = parseMemoryCandidates(raw);
+    let saved = 0;
+    for (const candidate of candidates) {
+      const duplicate = await query('SELECT id FROM user_memories WHERE user_id=$1 AND lower(content)=lower($2) LIMIT 1', [userId, candidate.content]);
+      if (duplicate.rows[0]) continue;
+      const memory = await saveMemory(userId, candidate);
+      try { await indexMemory(memory); } catch (error) { console.warn('New memory embedding failed:', error?.message || error); }
+      saved += 1;
+    }
+    return saved;
+  } catch (error) {
+    console.warn('Memory extraction unavailable:', error?.message || error);
+    return 0;
+  }
+}
+
+export const _test = { clean, validUserId, cosineSimilarity, parseMemoryCandidates };
