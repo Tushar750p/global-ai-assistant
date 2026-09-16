@@ -43,6 +43,8 @@ jobs:
           node --check public/app.js
           node --check db.js
           node --check auth.js
+          node --check agent-engine.js
+          node --check background-agent.js
 
       - name: Run smoke test
         run: npm test
