@@ -35,9 +35,6 @@ jobs:
           pkg=Path('package.json'); s=pkg.read_text(); a='test/agent-engine.test.js test/background-agent.test.js'; b='test/agent-engine.test.js test/agent-memory.test.js test/background-agent.test.js'
           if a not in s: raise SystemExit('Missing package test pattern')
           pkg.write_text(s.replace(a,b,1))
-          ci=Path('.github/workflows/ci.yml'); s=ci.read_text()
-          if 'node --check agent-memory.js' not in s: s=s.replace('          node --check agent-engine.js\n','          node --check agent-engine.js\n          node --check agent-memory.js\n',1)
-          ci.write_text(s)
           t=Path('test/agent-engine.test.js'); s=t.read_text(); a="['github_repo', 'github_file', 'synthesize']"; b="['github_repo', 'github_file', 'github_issues', 'synthesize']"
           if a not in s: raise SystemExit('Missing GitHub planner expectation')
           t.write_text(s.replace(a,b,1))
@@ -55,6 +52,6 @@ jobs:
           rm -f .github/workflows/connect-agent-memory.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add agent-engine.js package.json .github/workflows/ci.yml test/agent-engine.test.js test/agent-memory.test.js .github/workflows/connect-agent-memory.yml
+          git add agent-engine.js package.json test/agent-engine.test.js test/agent-memory.test.js .github/workflows/connect-agent-memory.yml
           git commit -m 'feat: connect agent long-term memory to planning loop'
           git push
