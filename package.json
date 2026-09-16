@@ -1,13 +1,13 @@
 {
   "name": "global-ai-assistant",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "A global, multilingual AI assistant.",
   "type": "module",
   "scripts": {
     "start": "node --import ./runtime-hardening.js server.js",
     "dev": "node --import ./runtime-hardening.js --watch server.js",
-    "test": "node --test test/smoke.test.js test/usage.test.js test/plans.test.js test/billing.test.js"
+    "test": "node --test test/smoke.test.js test/usage.test.js test/plans.test.js test/billing.test.js test/orchestrator.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
