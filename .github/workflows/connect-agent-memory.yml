@@ -16,10 +16,6 @@ jobs:
       - name: Patch agent memory integration
         shell: bash
         run: |
-          if [[ "${GITHUB_SHA}" != "6b4dc587b59877b83b42d225fb429ce48c888355" && "${GITHUB_EVENT_NAME}" == "push" ]]; then
-            echo "Unexpected push; integration workflow is intended for the current patch commit."
-            exit 0
-          fi
           python3 - <<'PY'
           from pathlib import Path
           p = Path('agent-engine.js')
