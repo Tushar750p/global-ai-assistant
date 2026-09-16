@@ -2,8 +2,13 @@ import { getPool, query } from './db.js';
 import { getSessionUser } from './auth.js';
 
 const TOOL_POLICY = Object.freeze({
-  research: { permission: 'web_read', label: 'Web research' }, verify: { permission: 'web_read', label: 'Web verification' }, synthesize: { permission: null, label: 'Answer synthesis' },
-  github_read: { permission: 'file_read', label: 'GitHub read access' }, aws_read: { permission: 'file_read', label: 'AWS read access' }
+  research: { permission: 'web_read', label: 'Web research' },
+  verify: { permission: 'web_read', label: 'Web verification' },
+  synthesize: { permission: null, label: 'Answer synthesis' },
+  github_repo: { permission: 'file_read', label: 'GitHub repository read access' },
+  github_file: { permission: 'file_read', label: 'GitHub file read access' },
+  github_issues: { permission: 'file_read', label: 'GitHub issues read access' },
+  aws_read: { permission: 'file_read', label: 'AWS read access' }
 });
 const TERMINAL = new Set(['completed','failed','blocked']); let tableReady=false;
 function normalizePermissions(value={}) { return {web_read:value.web_read===true,file_read:value.file_read===true,code_execution:value.code_execution===true,external_write:value.external_write===true,destructive_actions:value.destructive_actions===true}; }
