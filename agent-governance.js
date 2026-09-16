@@ -13,7 +13,7 @@ function riskForGoal(goal) {
   return high ? 'high' : medium ? 'medium' : 'low';
 }
 function requiresApproval(risk) { return risk === 'high'; }
-function permissionsForRisk(risk) {
+export function permissionsForRisk(risk) {
   if (risk === 'high') return { web_read: true, file_read: true, code_execution: false, external_write: false, destructive_actions: false };
   if (risk === 'medium') return { web_read: true, file_read: true, code_execution: true, external_write: false, destructive_actions: false };
   return { web_read: true, file_read: true, code_execution: true, external_write: false, destructive_actions: false };
