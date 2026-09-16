@@ -50,6 +50,7 @@ jobs:
           node --check public/response-experience.js
           node --check public/premium-ui.js
           node --check public/advanced-workspace.js
+          node --check public/task-dashboard.js
           node --check db.js
           node --check auth.js
           node --check agent-engine.js
