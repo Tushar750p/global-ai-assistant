@@ -54,6 +54,7 @@ jobs:
           node --check db.js
           node --check auth.js
           node --check agent-engine.js
+          node --check agent-memory.js
           node --check background-agent.js
           node --check tool-execution.js
 
