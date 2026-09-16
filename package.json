@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node --import ./runtime-hardening.js server.js",
     "dev": "node --import ./runtime-hardening.js --watch server.js",
-    "test": "node --test test/smoke.test.js test/usage.test.js test/plans.test.js test/billing.test.js test/orchestrator.test.js test/semantic-memory.test.js test/deep-research.test.js test/research-verification.test.js test/agent-engine.test.js test/background-agent.test.js test/agent-governance.test.js"
+    "test": "node --test test/smoke.test.js test/usage.test.js test/plans.test.js test/billing.test.js test/orchestrator.test.js test/semantic-memory.test.js test/deep-research.test.js test/research-verification.test.js test/agent-engine.test.js test/background-agent.test.js test/agent-governance.test.js test/tool-registry.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
