@@ -14,6 +14,22 @@ test('heuristic planner creates research verification and synthesis flow', () =>
   validatePlan(plan);
 });
 
+test('heuristic planner selects GitHub tools for repository debugging', () => {
+  const plan = heuristicPlan('Inspect my GitHub repository and find the deployment bug in the code.');
+  assert.deepEqual(plan.tasks.map(t => t.tool), ['github_repo', 'github_file', 'synthesize']);
+  validatePlan(plan);
+});
+
+test('heuristic planner selects AWS read tool for infrastructure goals', () => {
+  const plan = heuristicPlan('Inspect my AWS infrastructure and summarize the environment.');
+  assert.deepEqual(plan.tasks.map(t => t.tool), ['aws_read', 'synthesize']);
+  validatePlan(plan);
+});
+
+test('external read-only tools cannot be marked medium or high risk', () => {
+  assert.throws(() => validatePlan({ objective:'x', tasks:[{id:'a',title:'AWS',tool:'aws_read',input:'x',depends_on:[],risk:'high'}] }), /low risk/);
+});
+
 test('topological executor orders dependencies', () => {
   const ordered = topologicalTasks([
     { id: 'c', tool: 'synthesize', depends_on: ['b'] },
@@ -36,7 +52,7 @@ test('agent executes an injected deterministic plan without network', async () =
     { id: 'two', title: 'Verify', tool: 'verify', input: 'verify', depends_on: ['one'], risk: 'low' },
     { id: 'three', title: 'Synthesize', tool: 'synthesize', input: 'final', depends_on: ['two'], risk: 'low' }
   ] };
-  const fetchImpl = async (_url, _options) => ({ ok: true, json: async () => ({ output_text: 'tool result' }) });
+  const fetchImpl = async () => ({ ok: true, json: async () => ({ output_text: 'tool result' }) });
   const result = await runAgent('test', { plan, fetchImpl });
   assert.equal(result.status, 'completed');
   assert.deepEqual(Object.keys(result.results), ['one', 'two', 'three']);
