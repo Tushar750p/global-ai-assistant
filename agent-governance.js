@@ -12,7 +12,7 @@ function riskForGoal(goal) {
   const medium = /create|update|edit|deploy|install|configure|run command|execute|upload|download|github|aws|cloud|database|server|infrastructure/.test(text);
   return high ? 'high' : medium ? 'medium' : 'low';
 }
-function requiresApproval(risk) { return risk === 'high'; }
+export function requiresApproval(risk) { return risk === 'high'; }
 export function permissionsForRisk(risk) {
   if (risk === 'high') return { web_read: true, file_read: true, code_execution: false, external_write: false, destructive_actions: false };
   if (risk === 'medium') return { web_read: true, file_read: true, code_execution: true, external_write: false, destructive_actions: false };
