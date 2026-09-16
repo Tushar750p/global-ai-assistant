@@ -7,6 +7,7 @@ import { registerAgentRoutes } from './agent-engine.js';
 import { registerBackgroundAgentRoutes, startBackgroundAgent } from './background-agent.js';
 import { registerAgentGovernanceRoutes } from './agent-governance.js';
 import { registerTaskCenterRoutes } from './task-center.js';
+import { registerToolAuditRoutes } from './tool-execution.js';
 import { closeDb } from './db.js';
 import { getSessionUser } from './auth.js';
 import { patchOpenAIResponses, providerStatus } from './orchestrator.js';
@@ -26,7 +27,8 @@ const agentMounted=Symbol.for('global-ai-assistant.agent-bootstrap');
 const backgroundAgentMounted=Symbol.for('global-ai-assistant.background-agent-bootstrap');
 const governanceMounted=Symbol.for('global-ai-assistant.agent-governance-bootstrap');
 const taskCenterMounted=Symbol.for('global-ai-assistant.task-center-bootstrap');
-express.application.use=function patchedUse(...args){if(!this[billingMounted]){registerBillingRoutes(this);this[billingMounted]=true;}const result=originalUse.apply(this,args);if(!this[researchMounted]){registerResearchRoutes(this);this[researchMounted]=true;}if(!this[verificationMounted]){registerVerificationRoutes(this);this[verificationMounted]=true;}if(!this[agentMounted]){registerAgentRoutes(this);this[agentMounted]=true;}if(!this[backgroundAgentMounted]){registerBackgroundAgentRoutes(this);this[backgroundAgentMounted]=true;}if(!this[governanceMounted]){registerAgentGovernanceRoutes(this,startBackgroundAgent);this[governanceMounted]=true;}if(!this[taskCenterMounted]){registerTaskCenterRoutes(this);this[taskCenterMounted]=true;}return result;};
+const auditMounted=Symbol.for('global-ai-assistant.tool-audit-bootstrap');
+express.application.use=function patchedUse(...args){if(!this[billingMounted]){registerBillingRoutes(this);this[billingMounted]=true;}const result=originalUse.apply(this,args);if(!this[researchMounted]){registerResearchRoutes(this);this[researchMounted]=true;}if(!this[verificationMounted]){registerVerificationRoutes(this);this[verificationMounted]=true;}if(!this[agentMounted]){registerAgentRoutes(this);this[agentMounted]=true;}if(!this[backgroundAgentMounted]){registerBackgroundAgentRoutes(this);this[backgroundAgentMounted]=true;}if(!this[governanceMounted]){registerAgentGovernanceRoutes(this,startBackgroundAgent);this[governanceMounted]=true;}if(!this[taskCenterMounted]){registerTaskCenterRoutes(this);this[taskCenterMounted]=true;}if(!this[auditMounted]){registerToolAuditRoutes(this);this[auditMounted]=true;}return result;};
 function findHttpServers(){return process._getActiveHandles().filter(handle=>handle&&handle.constructor?.name==='Server'&&typeof handle.close==='function');}
 function closeServer(server){return new Promise(resolve=>{if(server.listening)server.close(()=>resolve());else resolve();});}
 async function shutdown(signal){if(shuttingDown)return;shuttingDown=true;console.log(`Received ${signal}; shutting down gracefully.`);const forceExit=setTimeout(()=>{console.error('Graceful shutdown timed out; forcing process exit.');process.exit(1);},10000);forceExit.unref();try{await Promise.all(findHttpServers().map(closeServer));await closeDb();clearTimeout(forceExit);process.exit(0);}catch(error){clearTimeout(forceExit);console.error('Graceful shutdown failed:',error?.message||error);process.exit(1);}}
