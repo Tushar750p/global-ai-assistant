@@ -80,6 +80,7 @@ async function startGeminiResearch(queryText, visualization = false) {
     input: queryText,
     agent: DEFAULT_AGENT,
     background: true,
+    store: true,
     agent_config: { type: 'deep-research', thinking_summaries: 'auto', ...(visualization ? { visualization: 'auto' } : {}) }
   };
   const response = await fetch(API_BASE, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body) });
