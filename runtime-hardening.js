@@ -1,5 +1,5 @@
 import express from 'express';
-import OpenAI from 'openai';
+import { Responses } from 'openai/resources/responses/responses';
 import { registerBillingRoutes } from './billing-routes.js';
 import { closeDb } from './db.js';
 import { patchOpenAIResponses, providerStatus } from './orchestrator.js';
@@ -10,7 +10,7 @@ import { patchOpenAIResponses, providerStatus } from './orchestrator.js';
 // a real OpenAI key until those endpoints are providerized.
 const providers=providerStatus();
 if(!providers.openai&&(providers.gemini||providers.openrouter))process.env.OPENAI_API_KEY='router-placeholder';
-patchOpenAIResponses(OpenAI);
+patchOpenAIResponses(Responses);
 
 let shuttingDown = false;
 const originalUse = express.application.use;
