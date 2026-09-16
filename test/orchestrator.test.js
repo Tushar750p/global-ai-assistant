@@ -25,8 +25,9 @@ test('auto routing can fall back to Gemini when OpenRouter fails',async()=>{
     const fakeFetch=async(url,options)=>{
       calls.push(url);
       if(url.includes('openrouter'))return new Response('rate limited',{status:429});
-      assert.match(url,/generativelanguage\.googleapis\.com/);
-      return new Response(JSON.stringify({candidates:[{content:{parts:[{text:'hello from gemini'}]}}]}),{status:200,headers:{'content-type':'application/json'}});
+      assert.match(url,/generativelanguage\.googleapis\.com\/v1beta\/interactions/);
+      const body=JSON.parse(options.body);assert.equal(body.model,'gemini-3.8-flash');
+      return new Response(JSON.stringify({output_text:'hello from gemini',steps:[{type:'model_output',content:[{text:'hello from gemini'}]}]}),{status:200,headers:{'content-type':'application/json'}});
     };
     const r=await routeResponses(async()=>{throw new Error('OpenAI should not be used before free providers');},{instructions:'test',input:[{role:'user',content:'hello'}]},fakeFetch);
     assert.equal(r.output_text,'hello from gemini');assert.equal(r.provider,'gemini');assert.equal(calls.length,2);
